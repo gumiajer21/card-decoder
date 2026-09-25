@@ -174,8 +174,10 @@
 
   function cardImageUrlsForId(id, quality = state.imageQuality) {
     if (!id) return [];
-    const high = `card-images-high/${id}.jpg`;
-    const chinese = `card-images-zh/${id}.webp`;
+    const key = String(id);
+    const shard = key.padStart(8, '0').slice(0, 2);
+    const high = `card-images-high/${shard}/${key}.jpg`;
+    const chinese = `card-images-zh/${shard}/${key}.webp`;
     if (quality === 'zh') return [chinese, high];
     return [high];
   }
@@ -337,6 +339,13 @@
     return indices.reduce((sum, index) => sum + weightOf(CARDS[index]), 0);
   }
 
+  function poolTotals(pool = state.pool) {
+    return {
+      cards: CARDS.reduce((sum, card) => sum + weightOf(card, pool), 0),
+      groups: CARDS.reduce((sum, card) => sum + (weightOf(card, pool) > 0 ? 1 : 0), 0),
+    };
+  }
+
   function thresholdGain(beforeMask, afterMask, config = state.config, puzzle = state.puzzle) {
     const before = popcount(beforeMask);
     const after = popcount(afterMask);
@@ -364,8 +373,9 @@
     $('#poolCaveat').textContent = state.pool === 'md'
       ? `数据版本 ${dataDate}：按 Master Duel 格式名单筛选，但“卡片解码者”活动可能另行排除少量卡片。若某个候选确定未出现在活动中，请忽略该候选；由此造成的概率误差通常很小。`
       : `完整官方怪兽仅用于候选归零时排查漏卡，不代表这些卡都已收录于 Master Duel 或本次活动。数据版本 ${dataDate}。`;
-    $('#candidateCount').textContent = candidateMass().toLocaleString('zh-CN');
-    $('#candidateMass').textContent = `${candidateCache.length.toLocaleString('zh-CN')} 个字段组`;
+    const totals = poolTotals();
+    $('#candidateCount').textContent = `${candidateMass().toLocaleString('zh-CN')} / ${totals.cards.toLocaleString('zh-CN')}`;
+    $('#candidateMass').textContent = `${candidateCache.length.toLocaleString('zh-CN')} / ${totals.groups.toLocaleString('zh-CN')} 个判定组`;
     const poolSource = DATA.source?.masterDuelPool ? `；筛选源：${DATA.source.masterDuelPool}` : '';
     $('#dataStats').textContent = `本地卡库：大师决斗怪兽 ${DATA.stats.masterDuelMonsterRecords.toLocaleString('zh-CN')} 张，${DATA.stats.masterDuelGroups.toLocaleString('zh-CN')} 个判定组；完整官方怪兽 ${DATA.stats.allMonsterRecords.toLocaleString('zh-CN')} 张${poolSource}。`;
     $('#rewardHelp').textContent = isPremiumPuzzle() ? `揭示只缩小候选集，不计入${config.milestones.map((item) => item.matches).join('／')}项高价值奖励。` : `本题每新增1个累计相符项记 ${config.regularMatchPoints} 点后段进度；揭示不计入。`;
@@ -458,11 +468,11 @@
     $('#sessionModeLabel').textContent = testSession.mode === 'test' ? '测试模式 · 目标卡公开' : visible ? '小游戏模式 · 答案已揭晓' : '小游戏模式 · 目标卡隐藏';
     $('#testTargetName').textContent = visible ? target.name : '？？？';
     $('#testTargetStats').textContent = visible ? cardStats(target) : `根据反馈筛选候选并猜中目标；当前剩余 ${candidateMass().toLocaleString('zh-CN')} 张。`;
-    if (visible) setCardImage($('#testTargetImage'), target, true, 'card-back.gif');
+    if (visible) setCardImage($('#testTargetImage'), target, true, 'card-back.png');
     else {
       const image = $('#testTargetImage');
       image.hidden = false;
-      image.src = 'card-back.gif';
+      image.src = 'card-back.png';
       image.alt = '未知目标卡';
       image.dataset.zoomable = 'false';
     }
@@ -531,12 +541,17 @@
       defenseDesc: (left, right) => CARDS[right].def - CARDS[left].def || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
     };
     const top = [...filtered].sort(comparators[sort] || comparators.probability).slice(0, 100);
-    $('#candidateMass').textContent = filtered.length === candidateCache.length ? `${candidateCache.length.toLocaleString('zh-CN')} 个字段组` : `显示 ${filtered.length.toLocaleString('zh-CN')} / ${candidateCache.length.toLocaleString('zh-CN')}`;
+    const totals = poolTotals();
+    const filteredCards = candidateMass(filtered);
+    const currentCards = candidateMass(candidateCache);
+    $('#candidateMass').textContent = filtered.length === candidateCache.length
+      ? `完整卡 ${currentCards.toLocaleString('zh-CN')} / ${totals.cards.toLocaleString('zh-CN')} · 判定组 ${candidateCache.length.toLocaleString('zh-CN')} / ${totals.groups.toLocaleString('zh-CN')}`
+      : `筛选显示：完整卡 ${filteredCards.toLocaleString('zh-CN')} / ${currentCards.toLocaleString('zh-CN')} · 判定组 ${filtered.length.toLocaleString('zh-CN')} / ${candidateCache.length.toLocaleString('zh-CN')}`;
     if (!top.length) { container.innerHTML = `<div class="empty-inline">没有符合当前搜索或筛选条件的候选卡。</div>`; return; }
-    container.innerHTML = `<div class="candidate-row header"><span>代表卡</span><span>边框</span><span>属性</span><span>种族</span><span>数值</span><span>攻／守</span><span>概率</span></div>` + top.map((index) => {
+    container.innerHTML = `<div class="candidate-row header"><span>代表卡</span><span>边框</span><span>属性</span><span>种族</span><span>数值</span><span>攻／守</span><span>卡数／概率</span></div>` + top.map((index) => {
       const card = CARDS[index];
       const probability = total ? weightOf(card) / total : 0;
-      return `<div class="candidate-row"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span><span class="prob">${formatPercent(probability)}</span></div>`;
+      return `<div class="candidate-row"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span><span class="prob">${weightOf(card).toLocaleString('zh-CN')}张 · ${formatPercent(probability)}</span></div>`;
     }).join('');
   }
 
@@ -1162,7 +1177,7 @@
     $('#recommendTitle').textContent = recommendHint ? '先使用1次提示' : chooseAny ? `以下 ${equivalentChoices.length} 张任选其一` : card.name;
     $('#recommendTitle').disabled = recommendHint || chooseAny;
     $('#recommendTitle').dataset.cardIndex = recommendHint || chooseAny ? '' : String(best.index);
-    if (chooseAny) { const image=$('#recommendImage'); image.hidden=false; image.src='card-back.gif'; image.dataset.zoomable='false'; }
+    if (chooseAny) { const image=$('#recommendImage'); image.hidden=false; image.src='card-back.png'; image.dataset.zoomable='false'; }
     else setCardImage($('#recommendImage'), card, !recommendHint);
     $('#recommendReason').textContent = chooseAny
       ? `这些候选在当前策略树中的词典序价值完全相同：${equivalentChoices.slice(0,6).map((index)=>CARDS[index].name).join('、')}${equivalentChoices.length>6?'等':''}。任选一张都不会改变模型期望；请在下方自行选择，求解器不替你随机指定。`
