@@ -911,7 +911,7 @@
     const advice = policyDecision
       ? { use: policyDecision.action.type === 'hint', entropy: expectedHintEntropy(candidates, total), strict: true, proven: Boolean(policyDecision.proven), method: policyDecision.method, value: policyDecision.value, expandedStates: policyDecision.expandedStates, depth: policyDecision.depth }
       : hintAdvice(candidates, total, lastRecommendations[0], mode);
-    if (restrictedDecision) advice.reason = `提示与挑战已进入同一棵深度 ${restrictedDecision.depth} 的自适应策略树；当前行动在受限行动集中取得最佳可行下界。已展开 ${restrictedDecision.expandedStates.toLocaleString('zh-CN')} 个状态，但尚未证明全卡池全活动最优。`;
+    if (restrictedDecision) advice.reason = `提示与挑战已进入同一棵深度 ${restrictedDecision.depth} 的自适应策略树，并在完全猜中分支计入剩余题目的资源续值。已展开 ${restrictedDecision.expandedStates.toLocaleString('zh-CN')} 个状态；这是跨题近似值，尚未证明全局最优。`;
     if (mode === 'balanced' && !policyDecision && lastProof) {
       Object.assign(advice, lastProof);
       advice.reason = lastProof.proven
@@ -1046,7 +1046,8 @@
     const knownMask = FIELDS.reduce((mask, field) => mask | (state.known[field.key] ? field.bit : 0), 0);
     const base = { cards: CARDS, weights: CARDS.map((card) => weightOf(card)), actions: [...selected],
       hints: state.hints, challenges: state.challenges, candidates, knownMask, matchedMask: state.matchedMask,
-      guessed: [...alreadyGuessed], maxStates: 24000 };
+      guessed: [...alreadyGuessed], maxStates: 24000, remainingPuzzles: state.config.puzzles - state.puzzle + 1,
+      resourceModel: { hintChallengeRatio: .61, equivalentCostPerSolve: 3.9 } };
     for (const depth of [3, 2]) {
       try {
         const result = window.DecoderSolver.solveRestrictedHorizon({ ...base, depth });
@@ -1538,7 +1539,7 @@
       quick.slice(0,18).forEach(item=>selected.add(item.index));
       [...quick].sort((a,b)=>b.infoApprox-a.infoApprox).slice(0,8).forEach(item=>selected.add(item.index));
       [...candidates].sort((a,b)=>simulationWeight(CARDS[b],pool)-simulationWeight(CARDS[a],pool)).slice(0,8).forEach(index=>selected.add(index));
-      const base={cards:CARDS,weights:CARDS.map(card=>simulationWeight(card,pool)),actions:[...selected],hints,challenges,candidates,knownMask,matchedMask,guessed:[...guessed],maxStates:24000};
+      const base={cards:CARDS,weights:CARDS.map(card=>simulationWeight(card,pool)),actions:[...selected],hints,challenges,candidates,knownMask,matchedMask,guessed:[...guessed],maxStates:24000,remainingPuzzles:config.puzzles-puzzle+1,resourceModel:{hintChallengeRatio:.61,equivalentCostPerSolve:3.9}};
       for (const depth of [3,2]) {
         try { result=window.DecoderSolver.solveRestrictedHorizon({...base,depth}); diagnostics[`depth${depth}Calls`]+=1; break; }
         catch(error){if(!String(error.message).startsWith('HORIZON_STATE_LIMIT:'))console.error(error);}
