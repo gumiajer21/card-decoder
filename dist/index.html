@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07101f">
+  <meta name="description" content="游戏王大师决斗“卡片解码者”活动的本地分析、挑战推荐与模拟工具">
+  <title>卡片解码者 · 本地求解器</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307101f'/%3E%3Cpath d='M32 8l19 11v22L32 52 13 41V19z' fill='none' stroke='%235eead4' stroke-width='4'/%3E%3Cpath d='M32 18v28M20 25l24 14M44 25L20 39' stroke='%237dd3fc' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <div class="side-wallpaper side-wallpaper-left" aria-hidden="true"><img id="wallpaperLeft" alt=""></div>
+  <div class="side-wallpaper side-wallpaper-right" aria-hidden="true"><img id="wallpaperRight" alt=""></div>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><div><h1>卡片解码者</h1><p>大师决斗本地求解器</p></div></div>
+    <div class="top-controls"><div class="event-stats" aria-label="活动状态">
+      <label>题目 <input id="puzzleNumber" type="number" min="1" max="9" value="1" aria-label="题号"><span id="puzzleTotal">/ 9</span></label>
+      <label>提示 <input id="hintStock" type="number" min="0" value="3" aria-label="提示库存"></label>
+      <label>挑战 <input id="challengeStock" type="number" min="0" value="4" aria-label="挑战库存"></label>
+      <label>高价值 <output id="premiumScore">0</output></label>
+      <label>后段匹配 <output id="progressScore">0</output></label>
+    </div><div class="event-actions" aria-label="工具与模式">
+      <button id="settingsBtn" class="quiet-btn" type="button">活动设置</button>
+      <label class="theme-control">界面 <select id="themeSelect"><option value="dark">深色</option><option value="light">浅色</option></select></label>
+      <label class="theme-control image-quality-control">卡图 <select id="imageQualitySelect"><option value="low">低清</option><option value="high">高清</option><option value="zh">中文</option></select></label>
+      <button id="testModeBtn" class="quiet-btn" type="button">测试模式</button>
+      <button id="gameModeBtn" class="quiet-btn" type="button">小游戏模式</button>
+      <button id="simulationBtn" class="quiet-btn" type="button">规模测试</button>
+    </div></div>
+  </header>
+
+  <main class="workspace">
+    <section class="panel state-panel">
+      <div id="testBanner" class="test-banner" hidden><div class="target-summary"><img id="testTargetImage" class="card-art" src="card-back.svg" alt="未知目标卡"><div><span id="sessionModeLabel">测试模式 · 目标卡公开</span><strong id="testTargetName"></strong><p id="testTargetStats"></p></div></div><div class="test-actions"><button id="autoJudgeBtn" class="primary-btn" type="button">自动判定当前挑战</button><button id="revealTargetBtn" class="quiet-btn" type="button" hidden>放弃并揭晓</button><button id="newTestTargetBtn" class="quiet-btn" type="button">换一张目标</button><button id="exitTestBtn" class="danger-btn" type="button">退出模式</button></div></div>
+      <div class="section-heading"><div><p class="eyebrow">当前题状态</p><h2>六项线索</h2></div><div class="heading-actions"><span class="score-chip">本题 <strong id="puzzleScore">0</strong> 分</span><div class="candidate-pill"><span class="pulse"></span><strong id="candidateCount">—</strong> 个候选</div></div></div>
+      <div class="field-grid" id="fieldGrid" aria-label="六项字段"></div>
+      <div class="reward-wrap">
+        <div class="reward-track" id="rewardTrack" aria-label="奖励进度"></div>
+        <p id="matchedSummary">挑战累计相符 0 / 6</p>
+      </div>
+      <div class="input-deck">
+        <div class="input-tabs" role="tablist" aria-label="录入方式"><button class="tab is-active" type="button" data-tab="reveal" aria-selected="true">录入揭示</button><button class="tab" type="button" data-tab="challenge" aria-selected="false">记录挑战</button></div>
+        <div class="tab-pane" id="revealPane">
+          <div class="input-row"><label><span>字段</span><select id="revealField"></select></label><label class="grow"><span>实际揭示值</span><select id="revealValue"></select></label><label><span>来源</span><select id="revealSource"><option value="initial">初始揭示</option><option value="hint">提示（消耗1次）</option></select></label><button class="quiet-btn" id="randomHintBtn" type="button">随机提示</button><button class="primary-btn" id="addRevealBtn" type="button">加入线索</button></div>
+          <p class="form-help" id="rewardHelp">揭示只缩小候选集，不计入累计相符奖励。</p>
+        </div>
+        <div class="tab-pane" id="challengePane" hidden>
+          <div class="search-block"><label class="grow"><span>本次挑战卡</span><input id="cardSearch" type="search" autocomplete="off" placeholder="输入中文或英文卡名"></label><div class="search-results" id="searchResults" hidden></div></div>
+          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div><div class="selected-card-facts" id="selectedCardFacts"></div><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button></div></div>
+          <p class="form-help challenge-help" id="challengeHelp">选择卡片后执行挑战；测试和小游戏模式会直接生成判定。</p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel recommendation-panel">
+      <div class="section-heading compact"><div><p class="eyebrow">下一步</p><h2>推荐行动</h2></div><select id="recommendMode" class="mode-select" aria-label="推荐模式"><option value="balanced">★ 严格决策</option><option value="points">即时奖励</option><option value="solve">直接通关率</option><option value="info">反馈信息量</option></select></div>
+      <p class="mode-guide" id="modeGuide">统一比较提示与挑战；精确时给出证明，超出规模时显示严格上下界。</p>
+      <div class="recommendation-card empty-state" id="recommendationCard"><div class="scan-orbit" aria-hidden="true"><i></i><i></i><i></i><span>6</span></div><img id="recommendImage" class="recommend-image" alt="" hidden><button id="recommendTitle" class="recommend-title" type="button" disabled>录入初始揭示</button><p id="recommendReason">加入本题已经显示的字段，求解器会筛选候选并计算推荐挑战。</p><div class="recommend-card-stats" id="recommendCardStats" hidden></div></div>
+      <div class="metric-grid"><div><span>期望即时得分</span><strong id="metricPoints">—</strong></div><div><span>本次通关概率</span><strong id="metricSolve">—</strong></div><div><span>信息增益</span><strong id="metricInfo">—</strong></div></div>
+      <button class="calculate-btn" id="calculateBtn" type="button">计算最佳挑战</button>
+      <div class="calc-progress" id="calcProgress" hidden><span></span><em>正在比较合法挑战…</em></div><div class="alternatives" id="alternatives"></div>
+      <p class="method-note" id="methodNote">信息熵仅作解释，不再折算成奖励；边界重叠时不会宣称策略已被证明最优。</p>
+    </aside>
+
+    <section class="panel lower-panel">
+      <div class="section-heading compact"><div><p class="eyebrow">分析记录</p><h2>候选与历史</h2></div><div class="lower-actions"><label>卡池 <select id="poolMode"><option value="md">大师决斗近似卡池</option><option value="all">完整官方怪兽兜底</option></select></label><button id="undoBtn" class="quiet-btn" type="button">撤销</button><button id="resetPuzzleBtn" class="danger-btn" type="button">重置本题</button></div></div>
+      <div class="analysis-grid">
+        <div class="candidate-table-wrap"><div class="subheading"><h3>候选卡</h3><span id="candidateMass"></span></div><div class="candidate-tools"><input id="candidateSearch" type="search" placeholder="搜索候选卡名" aria-label="搜索候选卡名"><select id="candidateFilterField" aria-label="筛选字段"><option value="all">全部字段</option><option value="border">边框</option><option value="attribute">属性</option><option value="race">种族</option><option value="number">等级／阶级／连接</option><option value="attack">攻击力</option><option value="defense">守备力</option></select><select id="candidateFilterValue" aria-label="筛选值" disabled><option value="">全部值</option></select><select id="candidateSort" aria-label="候选排序"><option value="probability">概率优先</option><option value="name">名称</option><option value="numberAsc">数值从小到大</option><option value="attackDesc">攻击力从高到低</option><option value="defenseDesc">守备力从高到低</option></select></div><div class="candidate-table" id="candidateTable"></div></div>
+        <div class="history-wrap"><div class="subheading"><h3>活动轨迹</h3><div class="history-heading-actions"><span id="historyCount">0 条</span><button id="openHistoryBtn" class="quiet-btn" type="button">打开档案</button></div></div><div class="history-list" id="historyList"></div></div>
+      </div>
+      <footer class="data-note"><span id="dataStats">正在载入卡库…</span><button id="resetEventBtn" type="button">重置整个活动</button></footer>
+    </section>
+  </main>
+
+  <div class="solved-banner" id="solvedBanner" hidden><div><span>题目完成</span><strong id="solvedRewardText">六项全部相符</strong></div><button id="nextPuzzleBtn" class="primary-btn" type="button">进入下一题</button></div>
+
+  <dialog id="settingsDialog" class="modal">
+    <form method="dialog" class="modal-card" id="settingsForm">
+      <header><div><p class="eyebrow">规则配置</p><h2>活动设置</h2></div><button id="settingsCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <label class="wide"><span>预设</span><select id="presetSelect"></select></label>
+      <div class="settings-grid">
+        <label><span>题目数量</span><input id="cfgPuzzles" type="number" min="1" max="99"></label>
+        <label><span>总提示次数</span><input id="cfgTotalHints" type="number" min="0" max="999"></label>
+        <label><span>总挑战次数</span><input id="cfgTotalChallenges" type="number" min="0" max="999"></label>
+        <label><span>高价值题数</span><input id="cfgPremiumPuzzles" type="number" min="0" max="99"></label>
+        <label><span>全中额外奖励</span><input id="cfgSolvePoints" type="number" min="0" max="99999"></label>
+        <label><span>后段每新增相符项</span><input id="cfgRegularMatchPoints" type="number" min="0" max="99999"></label>
+        <label><span>后段全中额外奖励</span><input id="cfgRegularSolvePoints" type="number" min="0" max="99999"></label>
+      </div>
+      <section class="milestone-editor"><div class="subheading"><h3>累计相符奖励</h3><button id="addMilestoneBtn" class="quiet-btn" type="button">添加门槛</button></div><div id="milestoneRows"></div></section>
+      <label class="wide"><span>保存为本机预设（可选）</span><div class="inline-control"><input id="customPresetName" type="text" placeholder="例如：下一期卡片解码者"><button id="savePresetBtn" class="quiet-btn" type="button">保存预设</button></div></label>
+      <p class="modal-note">提示和挑战按整个活动一次性配置，不再模拟逐日领取。前“高价值题数”题采用上方门槛和全中奖励；之后每次新增累计相符项按同一价值计算。</p>
+      <footer><button id="settingsCancelBtn" class="quiet-btn" type="button">取消</button><button id="applySettingsBtn" class="primary-btn" type="submit">应用并开始新活动</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="feedbackDialog" class="modal feedback-modal">
+    <form method="dialog" class="modal-card" id="feedbackForm">
+      <header><div><p class="eyebrow">真实活动录入</p><h2>本次挑战判定</h2></div><button id="feedbackCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <p class="modal-note">只有真实活动需要这一步；测试和小游戏模式会自动生成判定。</p>
+      <div class="feedback-grid" id="feedbackGrid" aria-label="挑战反馈"></div>
+      <div class="special-reveals" id="specialReveals" hidden><label id="borderRevealWrap" hidden><span>目标显示的完整边框</span><select id="borderReveal"></select></label><label id="numberRevealWrap" hidden><span>目标显示的等级／阶级／连接</span><select id="numberReveal"></select></label></div>
+      <footer><button id="feedbackCancelBtn" class="quiet-btn" type="button">取消</button><button class="primary-btn" id="confirmFeedbackBtn" type="submit">保存判定并扣除挑战</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="historyDialog" class="modal history-modal">
+    <div class="modal-card">
+      <header><div><p class="eyebrow">活动与窗口记录</p><h2>解码档案</h2></div><button id="historyCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <div class="history-summary" id="historySummary"></div>
+      <div class="history-timeline" id="historyTimeline"></div>
+      <footer><button id="clearArchiveBtn" class="danger-btn" type="button">清除旧活动档案</button><button id="historyDoneBtn" class="primary-btn" type="button">完成</button></footer>
+    </div>
+  </dialog>
+
+  <dialog id="simulationDialog" class="modal">
+    <form method="dialog" class="modal-card simulation-card" id="simulationForm">
+      <header><div><p class="eyebrow">快速近似模拟</p><h2>规模测试</h2></div><button id="simulationCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <div class="settings-grid compact-grid"><label><span>模拟活动数</span><input id="simulationRounds" type="number" min="1" max="500" value="50"></label><label><span>测试卡池</span><select id="simulationPool"><option value="md">大师决斗近似卡池</option><option value="all">完整官方怪兽兜底</option></select></label></div>
+      <p id="simulationConfigSummary" class="modal-note"></p>
+      <div id="simulationProgress" class="simulation-progress" hidden><span></span><strong>准备中…</strong></div>
+      <div id="simulationResults" class="simulation-results"><div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div></div>
+      <footer><button id="simulationCancelBtn" class="quiet-btn" type="button">关闭</button><button id="runSimulationBtn" class="primary-btn" type="submit">开始模拟</button></footer>
+    </form>
+  </dialog>
+  <dialog id="imageViewerDialog" class="image-viewer" aria-label="卡图放大查看">
+    <button id="imageViewerClose" class="image-viewer-close" type="button" aria-label="关闭卡图">×</button>
+    <figure><img id="imageViewerImage" alt=""><figcaption id="imageViewerCaption"></figcaption></figure>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="cards-data.js"></script><script src="presets.js"></script><script src="solver-core.js"></script><script src="simulation-worker-source.js"></script><script src="app.js"></script>
+</body>
+</html>
