@@ -120,7 +120,7 @@
           }
         }
         hintValue[2] -= 1;
-        best = { value: hintValue, action: { type: 'hint' }, exact: true };
+        best = { value: hintValue, action: { type: 'hint' }, optimalActions: [{ type: 'hint' }], exact: true };
       }
 
       for (const guessIndex of actions) {
@@ -155,8 +155,10 @@
           }
           actionValue = add(actionValue, scale(branch, probability));
         }
-        const candidate = { value: actionValue, action: { type: 'challenge', index: guessIndex }, exact: true };
+        const action = { type: 'challenge', index: guessIndex };
+        const candidate = { value: actionValue, action, optimalActions: [action], exact: true };
         if (!best || compare(candidate.value, best.value) > 0) best = candidate;
+        else if (compare(candidate.value, best.value) === 0) best.optimalActions.push(action);
       }
       memo.set(key, best);
       return best;
@@ -204,7 +206,12 @@
       const key = `${depth}|${state.hints}|${state.challenges}|${state.knownMask}|${state.matchedMask}|${state.candidates.join(',')}|${[...state.guessed].sort((a,b)=>a-b).join(',')}`;
       if (memo.has(key)) return memo.get(key);
       if (++expandedStates > maxStates) throw new Error(`HORIZON_STATE_LIMIT:${maxStates}`);
-      const total = mass(state.candidates); let best = { value: [...ZERO], action: { type: 'stop' } };
+      const total = mass(state.candidates); let best = { value: [...ZERO], action: { type: 'stop' }, optimalActions: [{ type: 'stop' }] };
+      function consider(value, action) {
+        const order = compare(value, best.value);
+        if (order > 0) best = { value, action, optimalActions: [action] };
+        else if (order === 0) best.optimalActions.push(action);
+      }
       if (state.hints > 0 && state.knownMask !== 63) {
         const unknown = FIELDS.map((field,index)=>({...field,index})).filter((field)=>!(state.knownMask&field.bit));
         let value = [...ZERO];
@@ -214,7 +221,7 @@
           for (const subset of parts.values()) value=add(value,scale(visit({...state,hints:state.hints-1,candidates:subset,knownMask:state.knownMask|field.bit,guessed:new Set(state.guessed)},depth-1).value,mass(subset)/total/unknown.length));
         }
         value[2]-=1;
-        if(compare(value,best.value)>0)best={value,action:{type:'hint'}};
+        consider(value,{type:'hint'});
       }
       if (state.challenges > 0) for (const guessIndex of actions) {
         if(state.guessed.has(guessIndex))continue;
@@ -228,7 +235,7 @@
           else {const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.match,guessed},depth-1).value);}
           value=add(value,scale(branch,p));
         }
-        if(compare(value,best.value)>0)best={value,action:{type:'challenge',index:guessIndex}};
+        consider(value,{type:'challenge',index:guessIndex});
       }
       memo.set(key,best); return best;
     }

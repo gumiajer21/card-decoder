@@ -24,7 +24,7 @@
     </div><div class="event-actions" aria-label="工具与模式">
       <button id="settingsBtn" class="quiet-btn" type="button">活动设置</button>
       <label class="theme-control">界面 <select id="themeSelect"><option value="dark">深色</option><option value="light">浅色</option></select></label>
-      <label class="theme-control image-quality-control">卡图 <select id="imageQualitySelect"><option value="low">低清</option><option value="high">高清</option><option value="zh">中文</option></select></label>
+      <label class="theme-control image-quality-control">卡图 <select id="imageQualitySelect"><option value="high">英文高清</option><option value="zh">中文高清</option></select></label>
       <button id="testModeBtn" class="quiet-btn" type="button">测试模式</button>
       <button id="gameModeBtn" class="quiet-btn" type="button">小游戏模式</button>
       <button id="simulationBtn" class="quiet-btn" type="button">规模测试</button>
@@ -33,7 +33,7 @@
 
   <main class="workspace">
     <section class="panel state-panel">
-      <div id="testBanner" class="test-banner" hidden><div class="target-summary"><img id="testTargetImage" class="card-art" src="card-back.svg" alt="未知目标卡"><div><span id="sessionModeLabel">测试模式 · 目标卡公开</span><strong id="testTargetName"></strong><p id="testTargetStats"></p></div></div><div class="test-actions"><button id="autoJudgeBtn" class="primary-btn" type="button">自动判定当前挑战</button><button id="revealTargetBtn" class="quiet-btn" type="button" hidden>放弃并揭晓</button><button id="newTestTargetBtn" class="quiet-btn" type="button">换一张目标</button><button id="exitTestBtn" class="danger-btn" type="button">退出模式</button></div></div>
+      <div id="testBanner" class="test-banner" hidden><div class="target-summary"><img id="testTargetImage" class="card-art" src="card-back.gif" alt="未知目标卡"><div><span id="sessionModeLabel">测试模式 · 目标卡公开</span><strong id="testTargetName"></strong><p id="testTargetStats"></p></div></div><div class="test-actions"><button id="autoJudgeBtn" class="primary-btn" type="button">自动判定当前挑战</button><button id="revealTargetBtn" class="quiet-btn" type="button" hidden>放弃并揭晓</button><button id="newTestTargetBtn" class="quiet-btn" type="button">换一张目标</button><button id="exitTestBtn" class="danger-btn" type="button">退出模式</button></div></div>
       <div class="section-heading"><div><p class="eyebrow">当前题状态</p><h2>六项线索</h2></div><div class="heading-actions"><span class="score-chip">本题 <strong id="puzzleScore">0</strong> 分</span><div class="candidate-pill"><span class="pulse"></span><strong id="candidateCount">—</strong> 个候选</div></div></div>
       <div class="field-grid" id="fieldGrid" aria-label="六项字段"></div>
       <div class="reward-wrap">
@@ -65,7 +65,8 @@
     </aside>
 
     <section class="panel lower-panel">
-      <div class="section-heading compact"><div><p class="eyebrow">分析记录</p><h2>候选与历史</h2></div><div class="lower-actions"><label>卡池 <select id="poolMode"><option value="md">大师决斗近似卡池</option><option value="all">完整官方怪兽兜底</option></select></label><button id="undoBtn" class="quiet-btn" type="button">撤销</button><button id="resetPuzzleBtn" class="danger-btn" type="button">重置本题</button></div></div>
+      <div class="section-heading compact"><div><p class="eyebrow">分析记录</p><h2>候选与历史</h2></div><div class="lower-actions"><label>卡池 <select id="poolMode"><option value="md">大师决斗游戏内校准卡池</option><option value="all">完整官方怪兽兜底</option></select></label><button id="undoBtn" class="quiet-btn" type="button">撤销</button><button id="resetPuzzleBtn" class="danger-btn" type="button">重置本题</button></div></div>
+      <p class="pool-caveat" id="poolCaveat"></p>
       <div class="analysis-grid">
         <div class="candidate-table-wrap"><div class="subheading"><h3>候选卡</h3><span id="candidateMass"></span></div><div class="candidate-tools"><input id="candidateSearch" type="search" placeholder="搜索候选卡名" aria-label="搜索候选卡名"><select id="candidateFilterField" aria-label="筛选字段"><option value="all">全部字段</option><option value="border">边框</option><option value="attribute">属性</option><option value="race">种族</option><option value="number">等级／阶级／连接</option><option value="attack">攻击力</option><option value="defense">守备力</option></select><select id="candidateFilterValue" aria-label="筛选值" disabled><option value="">全部值</option></select><select id="candidateSort" aria-label="候选排序"><option value="probability">概率优先</option><option value="name">名称</option><option value="numberAsc">数值从小到大</option><option value="attackDesc">攻击力从高到低</option><option value="defenseDesc">守备力从高到低</option></select></div><div class="candidate-table" id="candidateTable"></div></div>
         <div class="history-wrap"><div class="subheading"><h3>活动轨迹</h3><div class="history-heading-actions"><span id="historyCount">0 条</span><button id="openHistoryBtn" class="quiet-btn" type="button">打开档案</button></div></div><div class="history-list" id="historyList"></div></div>
@@ -118,7 +119,7 @@
   <dialog id="simulationDialog" class="modal">
     <form method="dialog" class="modal-card simulation-card" id="simulationForm">
       <header><div><p class="eyebrow">快速近似模拟</p><h2>规模测试</h2></div><button id="simulationCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
-      <div class="settings-grid compact-grid"><label><span>模拟活动数</span><input id="simulationRounds" type="number" min="1" max="500" value="50"></label><label><span>测试卡池</span><select id="simulationPool"><option value="md">大师决斗近似卡池</option><option value="all">完整官方怪兽兜底</option></select></label></div>
+      <div class="settings-grid compact-grid"><label><span>模拟活动数</span><input id="simulationRounds" type="number" min="1" max="500" value="50"></label><label><span>测试卡池</span><select id="simulationPool"><option value="md">大师决斗游戏内校准卡池</option><option value="all">完整官方怪兽兜底</option></select></label></div>
       <p id="simulationConfigSummary" class="modal-note"></p>
       <div id="simulationProgress" class="simulation-progress" hidden><span></span><strong>准备中…</strong></div>
       <div id="simulationResults" class="simulation-results"><div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div></div>
@@ -130,6 +131,6 @@
     <figure><img id="imageViewerImage" alt=""><figcaption id="imageViewerCaption"></figcaption></figure>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="cards-data.js"></script><script src="presets.js"></script><script src="solver-core.js"></script><script src="simulation-worker-source.js"></script><script src="app.js"></script>
+  <script src="cards-data.js"></script><script src="presets.js"></script><script src="wallpapers.js"></script><script src="solver-core.js"></script><script src="simulation-worker-source.js"></script><script src="app.js"></script>
 </body>
 </html>

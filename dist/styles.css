@@ -38,11 +38,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .ambient { position: fixed; pointer-events: none; filter: blur(90px); opacity: .17; border-radius: 999px; }
 .ambient-a { width: 320px; height: 320px; background: #0ea5e9; top: -130px; right: 12%; }
 .ambient-b { width: 260px; height: 260px; background: #14b8a6; bottom: -120px; left: 8%; }
-.side-wallpaper { position: fixed; z-index: 0; top: 112px; bottom: 18px; width: clamp(220px, 20vw, 370px); overflow: hidden; pointer-events: none; opacity: .3; filter: saturate(.88) contrast(1.04); }
-.side-wallpaper-left { left: 0; mask-image: linear-gradient(90deg, #000 0, rgba(0,0,0,.72) 46%, transparent 100%); }
-.side-wallpaper-right { right: 0; mask-image: linear-gradient(270deg, #000 0, rgba(0,0,0,.72) 46%, transparent 100%); }
-.side-wallpaper img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transform: scale(1.055); filter: blur(.35px); transition: opacity 1.35s ease, transform 36s linear; }
-.side-wallpaper img.is-visible { opacity: 1; transform: scale(1); }
+.side-wallpaper { position: fixed; z-index: 0; inset-block: 0; width: clamp(280px, 29vw, 560px); overflow: hidden; pointer-events: none; opacity: .46; filter: saturate(.96) contrast(1.03); background: var(--bg); }
+.side-wallpaper-left { left: 0; mask-image: linear-gradient(90deg, #000 0, #000 52%, rgba(0,0,0,.62) 73%, transparent 100%); }
+.side-wallpaper-right { right: 0; mask-image: linear-gradient(270deg, #000 0, #000 52%, rgba(0,0,0,.62) 73%, transparent 100%); }
+.side-wallpaper img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; opacity: 0; transition: opacity 1.8s ease; will-change: opacity; }
+.side-wallpaper img.is-visible { opacity: 1; }
+.side-wallpaper img.is-fading { opacity: 0; }
 
 .topbar {
   position: relative;
@@ -225,6 +226,8 @@ select:focus, input:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba
 .method-note { margin: 10px 2px 0; color: var(--muted); font-size: .7rem; line-height: 1.5; }
 
 .lower-panel { grid-column: 1 / -1; min-height: 180px; }
+.pool-caveat { margin: -6px 0 14px; padding: 9px 11px; border: 1px solid rgba(248,212,119,.2); border-radius: 9px; color: #d8c896; background: rgba(92,67,18,.14); font-size: .73rem; line-height: 1.55; }
+html[data-theme="light"] .pool-caveat { color: #76570c; background: rgba(245,188,55,.12); border-color: rgba(138,98,8,.22); }
 .lower-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .lower-actions label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .74rem; }
 .lower-actions select { width: auto; height: 36px; font-size: .74rem; }
@@ -393,7 +396,7 @@ html[data-theme="light"] .candidate-pill,
 html[data-theme="light"] .status-badge { background: rgba(255,255,255,.76); }
 html[data-theme="light"] .candidate-tools input,
 html[data-theme="light"] .candidate-tools select { background: #fff; }
-html[data-theme="light"] .side-wallpaper { opacity: .16; filter: saturate(.7) contrast(.94); }
+html[data-theme="light"] .side-wallpaper { opacity: .28; filter: saturate(.82) contrast(.98); }
 html[data-theme="light"] .selected-card-facts div,
 html[data-theme="light"] .alternative-metrics > span,
 html[data-theme="light"] .history-summary div,

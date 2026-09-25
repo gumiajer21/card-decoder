@@ -1,0 +1,23 @@
+// 壁纸来源、作者及使用说明见项目根目录“壁纸来源与授权.txt”。
+window.CARD_DECODER_WALLPAPERS = [
+  'wallpapers/01-master-duel-banner.jpg',
+  'wallpapers/02-dark-magician-girl-official.png',
+  'wallpapers/03-red-eyes-4k.jpg',
+  'wallpapers/04-master-duel-keyart.jpg',
+  'wallpapers/05-master-duel-guardian.jpg',
+  'wallpapers/06-dark-magician-girl-ocg.jpg',
+  'wallpapers/07-red-eyes-izunanie.jpg',
+  'wallpapers/08-red-eyes-fire.png',
+  'wallpapers/09-red-eyes-cosmos.png',
+  'wallpapers/10-egyptian-gods.jpg',
+  'wallpapers/11-stardust.jpg',
+  'wallpapers/12-black-rose.jpg',
+  'wallpapers/13-black-rose-bloom.png',
+  'wallpapers/14-black-rose-fire.jpg',
+  'wallpapers/15-black-rose-lightning.png',
+  'wallpapers/16-black-rose-gold.png',
+  'wallpapers/17-akiza-black-rose.png',
+  'wallpapers/18-stardust-cosmos.png',
+  'wallpapers/19-red-eyes.png',
+  'wallpapers/20-dark-magician-girl.jpg',
+];

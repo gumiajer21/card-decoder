@@ -7,7 +7,7 @@
   const PRESET_KEY = 'card-decoder-custom-presets-v1';
   const SESSION_HISTORY_KEY = 'card-decoder-session-history-v1';
   const BUILTIN_PRESETS = Array.isArray(window.ACTIVITY_PRESETS) ? window.ACTIVITY_PRESETS : [];
-  const WALLPAPERS = ['wallpapers/celestial-dragon.png', 'wallpapers/arcane-phoenix.png'];
+  const WALLPAPERS = Array.isArray(window.CARD_DECODER_WALLPAPERS) ? window.CARD_DECODER_WALLPAPERS.filter(Boolean) : [];
   const FALLBACK_CONFIG = {
     puzzles: 9, totalHints: 11, totalChallenges: 36,
     premiumPuzzles: 3,
@@ -68,7 +68,7 @@
     initialUsed: false,
     solved: false,
     theme: localStorage.getItem('card-decoder-theme') || 'dark',
-    imageQuality: localStorage.getItem('card-decoder-image-quality') || 'low',
+    imageQuality: localStorage.getItem('card-decoder-image-quality') || 'high',
   });
 
   let state = loadState();
@@ -174,12 +174,10 @@
 
   function cardImageUrlsForId(id, quality = state.imageQuality) {
     if (!id) return [];
-    const low = `card-images/${id}.jpg`;
     const high = `card-images-high/${id}.jpg`;
     const chinese = `card-images-zh/${id}.webp`;
-    if (quality === 'zh') return [chinese, high, low];
-    if (quality === 'high') return [high, low];
-    return [low];
+    if (quality === 'zh') return [chinese, high];
+    return [high];
   }
 
   function cardImageUrl(card, quality = state.imageQuality) {
@@ -214,10 +212,30 @@
     if (!element || !WALLPAPERS.length) return null;
     const choices = WALLPAPERS.filter((path) => path !== avoidPath);
     const path = choices[Math.floor(Math.random() * choices.length)] || WALLPAPERS[0];
-    element.classList.remove('is-visible');
-    element.onload = () => element.classList.add('is-visible');
-    element.onerror = () => element.classList.remove('is-visible');
-    element.src = path;
+    const container = element.parentElement;
+    let layers = [...container.querySelectorAll('img')];
+    if (layers.length < 2) {
+      const layer = document.createElement('img');
+      layer.alt = '';
+      container.appendChild(layer);
+      layers = [...container.querySelectorAll('img')];
+    }
+    const active = layers.find((layer) => layer.classList.contains('is-visible')) || null;
+    const incoming = layers.find((layer) => layer !== active) || layers[0];
+    const preload = new Image();
+    preload.onload = () => {
+      incoming.src = path;
+      incoming.classList.remove('is-fading');
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        incoming.classList.add('is-visible');
+        if (active && active !== incoming) {
+          active.classList.add('is-fading');
+          active.classList.remove('is-visible');
+        }
+      }));
+    };
+    preload.onerror = () => incoming.classList.remove('is-visible');
+    preload.src = path;
     return path;
   }
 
@@ -228,7 +246,7 @@
     wallpaperTimer = setInterval(() => {
       leftPath = rotateWallpaper($('#wallpaperLeft'));
       setTimeout(() => rotateWallpaper($('#wallpaperRight'), leftPath), 1400);
-    }, 36000);
+    }, 45000);
   }
 
   function pushUndo() {
@@ -342,13 +360,18 @@
     $('#progressScore').textContent = state.progressScore;
     $('#puzzleScore').textContent = state.puzzleScore;
     $('#poolMode').value = state.pool;
+    const dataDate = DATA.generatedAt ? new Date(DATA.generatedAt).toLocaleDateString('zh-CN') : '未知日期';
+    $('#poolCaveat').textContent = state.pool === 'md'
+      ? `数据版本 ${dataDate}：按 Master Duel 格式名单筛选，但“卡片解码者”活动可能另行排除少量卡片。若某个候选确定未出现在活动中，请忽略该候选；由此造成的概率误差通常很小。`
+      : `完整官方怪兽仅用于候选归零时排查漏卡，不代表这些卡都已收录于 Master Duel 或本次活动。数据版本 ${dataDate}。`;
     $('#candidateCount').textContent = candidateMass().toLocaleString('zh-CN');
     $('#candidateMass').textContent = `${candidateCache.length.toLocaleString('zh-CN')} 个字段组`;
-    $('#dataStats').textContent = `本地卡库：大师决斗怪兽 ${DATA.stats.masterDuelMonsterRecords.toLocaleString('zh-CN')} 张，${DATA.stats.masterDuelGroups.toLocaleString('zh-CN')} 个判定组；完整官方怪兽 ${DATA.stats.allMonsterRecords.toLocaleString('zh-CN')} 张。`;
+    const poolSource = DATA.source?.masterDuelPool ? `；筛选源：${DATA.source.masterDuelPool}` : '';
+    $('#dataStats').textContent = `本地卡库：大师决斗怪兽 ${DATA.stats.masterDuelMonsterRecords.toLocaleString('zh-CN')} 张，${DATA.stats.masterDuelGroups.toLocaleString('zh-CN')} 个判定组；完整官方怪兽 ${DATA.stats.allMonsterRecords.toLocaleString('zh-CN')} 张${poolSource}。`;
     $('#rewardHelp').textContent = isPremiumPuzzle() ? `揭示只缩小候选集，不计入${config.milestones.map((item) => item.matches).join('／')}项高价值奖励。` : `本题每新增1个累计相符项记 ${config.regularMatchPoints} 点后段进度；揭示不计入。`;
     document.documentElement.dataset.theme = state.theme || 'dark';
     $('#themeSelect').value = state.theme || 'dark';
-    state.imageQuality = ['low', 'high', 'zh'].includes(state.imageQuality) ? state.imageQuality : 'low';
+    state.imageQuality = ['high', 'zh'].includes(state.imageQuality) ? state.imageQuality : 'high';
     $('#imageQualitySelect').value = state.imageQuality;
     $('#calculateBtn').disabled = state.solved || state.challenges <= 0 || candidateCache.length === 0;
     $('#undoBtn').disabled = undoStack.length === 0;
@@ -435,11 +458,11 @@
     $('#sessionModeLabel').textContent = testSession.mode === 'test' ? '测试模式 · 目标卡公开' : visible ? '小游戏模式 · 答案已揭晓' : '小游戏模式 · 目标卡隐藏';
     $('#testTargetName').textContent = visible ? target.name : '？？？';
     $('#testTargetStats').textContent = visible ? cardStats(target) : `根据反馈筛选候选并猜中目标；当前剩余 ${candidateMass().toLocaleString('zh-CN')} 张。`;
-    if (visible) setCardImage($('#testTargetImage'), target, true, 'card-back.svg');
+    if (visible) setCardImage($('#testTargetImage'), target, true, 'card-back.gif');
     else {
       const image = $('#testTargetImage');
       image.hidden = false;
-      image.src = 'card-back.svg';
+      image.src = 'card-back.gif';
       image.alt = '未知目标卡';
       image.dataset.zoomable = 'false';
     }
@@ -911,6 +934,11 @@
     const advice = policyDecision
       ? { use: policyDecision.action.type === 'hint', entropy: expectedHintEntropy(candidates, total), strict: true, proven: Boolean(policyDecision.proven), method: policyDecision.method, value: policyDecision.value, expandedStates: policyDecision.expandedStates, depth: policyDecision.depth }
       : hintAdvice(candidates, total, lastRecommendations[0], mode);
+    if (policyDecision?.action?.type === 'challenge') {
+      const candidateSet = new Set(candidates);
+      const tiedCandidates = [...new Set((policyDecision.optimalActions || []).filter((action) => action.type === 'challenge' && candidateSet.has(action.index)).map((action) => action.index))];
+      if (tiedCandidates.length > 1) advice.equivalentChoices = tiedCandidates;
+    }
     if (restrictedDecision) advice.reason = `提示与挑战已进入同一棵深度 ${restrictedDecision.depth} 的自适应策略树，并在完全猜中分支计入剩余题目的资源续值。已展开 ${restrictedDecision.expandedStates.toLocaleString('zh-CN')} 个状态；这是跨题近似值，尚未证明全局最优。`;
     if (mode === 'balanced' && !policyDecision && lastProof) {
       Object.assign(advice, lastProof);
@@ -1127,13 +1155,18 @@
     if (!best) return;
     const card = CARDS[best.index];
     const recommendHint = hint.use;
+    const equivalentChoices = hint.equivalentChoices || [];
+    const chooseAny = !recommendHint && equivalentChoices.length > 1;
     lastAdvice = { ...hint, recommendHint };
     $('#recommendationCard').classList.remove('empty-state');
-    $('#recommendTitle').textContent = recommendHint ? '先使用1次提示' : card.name;
-    $('#recommendTitle').disabled = recommendHint;
-    $('#recommendTitle').dataset.cardIndex = recommendHint ? '' : String(best.index);
-    setCardImage($('#recommendImage'), card, !recommendHint);
-    $('#recommendReason').textContent = hint.strict
+    $('#recommendTitle').textContent = recommendHint ? '先使用1次提示' : chooseAny ? `以下 ${equivalentChoices.length} 张任选其一` : card.name;
+    $('#recommendTitle').disabled = recommendHint || chooseAny;
+    $('#recommendTitle').dataset.cardIndex = recommendHint || chooseAny ? '' : String(best.index);
+    if (chooseAny) { const image=$('#recommendImage'); image.hidden=false; image.src='card-back.gif'; image.dataset.zoomable='false'; }
+    else setCardImage($('#recommendImage'), card, !recommendHint);
+    $('#recommendReason').textContent = chooseAny
+      ? `这些候选在当前策略树中的词典序价值完全相同：${equivalentChoices.slice(0,6).map((index)=>CARDS[index].name).join('、')}${equivalentChoices.length>6?'等':''}。任选一张都不会改变模型期望；请在下方自行选择，求解器不替你随机指定。`
+      : hint.strict
       ? hint.proven
         ? hint.method === 'exact-bellman'
           ? recommendHint
@@ -1154,7 +1187,9 @@
     $('#metricPoints').textContent = recommendHint ? '0.00' : best.points.toFixed(2);
     $('#metricSolve').textContent = recommendHint ? '0%' : formatPercent(best.solve);
     $('#metricInfo').textContent = `${(recommendHint ? hint.entropy : best.info).toFixed(2)} bit`;
-    $('#alternatives').innerHTML = recommendations.slice(recommendHint ? 0 : 1, recommendHint ? 3 : 4).map((item, offset) => `<button class="alternative" type="button" data-recommend-index="${item.index}"><div class="alternative-title"><b>${offset + 1}</b><span>${escapeHtml(CARDS[item.index].name)}</span></div><div class="alternative-metrics"><span><small>期望</small>${item.points.toFixed(2)}</span><span><small>通关</small>${formatPercent(item.solve)}</span><span><small>信息</small>${item.info.toFixed(2)} bit</span></div></button>`).join('');
+    $('#alternatives').innerHTML = chooseAny
+      ? equivalentChoices.slice(0,8).map((index,offset)=>`<button class="alternative" type="button" data-recommend-index="${index}"><div class="alternative-title"><b>=</b><span>${escapeHtml(CARDS[index].name)}</span></div><div class="alternative-metrics"><span><small>关系</small>并列最优</span><span><small>操作</small>点击选择</span></div></button>`).join('')
+      : recommendations.slice(recommendHint ? 0 : 1, recommendHint ? 3 : 4).map((item, offset) => `<button class="alternative" type="button" data-recommend-index="${item.index}"><div class="alternative-title"><b>${offset + 1}</b><span>${escapeHtml(CARDS[item.index].name)}</span></div><div class="alternative-metrics"><span><small>期望</small>${item.points.toFixed(2)}</span><span><small>通关</small>${formatPercent(item.solve)}</span><span><small>信息</small>${item.info.toFixed(2)} bit</span></div></button>`).join('');
     $('#methodNote').textContent = hint.method === 'restricted-horizon'
       ? `当前为受限深度自适应策略树：提示与挑战使用相同递归和终止规则；结果是合法可行策略，不等于全局最优证明。`
       : `严格模式按预期解题数、首次相符项数、负行动数作词典序比较；信息熵只用于解释。`;
@@ -1725,15 +1760,13 @@
       render();
     });
     $('#imageQualitySelect').addEventListener('change', (event) => {
-      state.imageQuality = ['low', 'high', 'zh'].includes(event.target.value) ? event.target.value : 'low';
+      state.imageQuality = ['high', 'zh'].includes(event.target.value) ? event.target.value : 'high';
       localStorage.setItem('card-decoder-image-quality', state.imageQuality);
       saveState();
       refreshImageQuality();
       const message = state.imageQuality === 'zh'
-        ? '已切换到中文卡图；缺少中文版时会依次使用高清、低清卡图。'
-        : state.imageQuality === 'high'
-          ? '已切换到高清卡图；尚未下载的图片会自动使用低清版。'
-          : '已切换到低清卡图。';
+        ? '已切换到中文高清卡图；缺少中文版时会使用英文高清图。'
+        : '已切换到英文高清卡图。';
       toast(message);
     });
     $('#undoBtn').addEventListener('click', () => {
