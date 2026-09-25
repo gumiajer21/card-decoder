@@ -1,0 +1,8 @@
+dist/card-images/
+dist/card-images-high/
+dist/card-images-zh/
+dist/wallpapers/
+*.log
+*.zip
+.DS_Store
+Thumbs.db
