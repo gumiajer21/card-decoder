@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 590 860" role="img" aria-label="未知卡片">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="70%">
+      <stop offset="0" stop-color="#173a59"/>
+      <stop offset=".58" stop-color="#0a1d33"/>
+      <stop offset="1" stop-color="#040914"/>
+    </radialGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect x="15" y="15" width="560" height="830" rx="30" fill="url(#bg)" stroke="#6ea9cc" stroke-width="8"/>
+  <rect x="45" y="45" width="500" height="770" rx="18" fill="none" stroke="#254a68" stroke-width="5"/>
+  <g transform="translate(295 412)" fill="none" stroke="url(#line)" filter="url(#glow)">
+    <circle r="132" stroke-width="7" opacity=".34"/>
+    <circle r="92" stroke-width="5" opacity=".5"/>
+    <path d="M0-150L130 75-130 75Z" stroke-width="8"/>
+    <path d="M0 150L-130-75 130-75Z" stroke-width="8" opacity=".74"/>
+  </g>
+  <text x="295" y="448" text-anchor="middle" fill="#d8f7ff" font-family="system-ui,sans-serif" font-size="94" font-weight="700">?</text>
+  <text x="295" y="700" text-anchor="middle" fill="#8fcbe3" font-family="system-ui,sans-serif" font-size="28" letter-spacing="12">UNKNOWN</text>
+</svg>
