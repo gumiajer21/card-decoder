@@ -188,8 +188,17 @@
   function solveRestrictedHorizon(options) {
     const cards = options.cards, weights = options.weights, actions = options.actions;
     const maxDepth = options.depth || 3, maxStates = options.maxStates || 40000;
+    const remainingPuzzles = Math.max(1, options.remainingPuzzles || 1);
+    const resourceModel = options.resourceModel || { hintChallengeRatio: 0.61, equivalentCostPerSolve: 3.9 };
     const memo = new Map(); let expandedStates = 0;
     const mass = (indices) => indices.reduce((sum, index) => sum + weights[index], 0);
+    function continuationValue(hints, challenges) {
+      const future = remainingPuzzles - 1;
+      if (future <= 0 || challenges <= 0) return [...ZERO];
+      const equivalent = challenges + resourceModel.hintChallengeRatio * Math.max(0, hints);
+      const solved = Math.min(future, challenges, equivalent / resourceModel.equivalentCostPerSolve);
+      return [solved, solved * 6, 0];
+    }
     function visit(state, depth) {
       if (depth <= 0 || !state.candidates.length || (!state.hints && !state.challenges)) return { value: [...ZERO], action: { type: 'stop' } };
       const key = `${depth}|${state.hints}|${state.challenges}|${state.knownMask}|${state.matchedMask}|${state.candidates.join(',')}|${[...state.guessed].sort((a,b)=>a-b).join(',')}`;
@@ -215,7 +224,8 @@
         for(const outcome of outcomes.values()){
           const p=mass(outcome.targets)/total,solved=outcome.match===63;
           let branch=rewardVector({},0,state.matchedMask,outcome.match,solved);
-          if(!solved){const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.match,guessed},depth-1).value);}
+          if(solved) branch=add(branch,continuationValue(state.hints,state.challenges-1));
+          else {const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.match,guessed},depth-1).value);}
           value=add(value,scale(branch,p));
         }
         if(compare(value,best.value)>0)best={value,action:{type:'challenge',index:guessIndex}};
