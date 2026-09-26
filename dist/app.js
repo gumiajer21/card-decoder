@@ -83,10 +83,12 @@
   let toastTimer = null;
   let testSession = null;
   let simulationRunning = false;
-  let simulationWorker = null;
+  let simulationWorkers = [];
   let simulationWorkerUrl = null;
   let simulationSnapshot = null;
+  let simulationStartedAt = 0;
   let wallpaperTimer = null;
+  let challengeSemanticsMigrated = false;
 
   function loadState() {
     try {
@@ -315,6 +317,42 @@
     return mask;
   }
 
+  function strictMatchMask(target, guess) {
+    let mask = matchMask(target, guess);
+    if (target.b !== guess.b) mask &= ~1;
+    return mask;
+  }
+
+  function migrateChallengeSemantics() {
+    if (challengeSemanticsMigrated) return;
+    const migrateLog = (log) => {
+      if (log.type !== 'challenge' || log.strictMask != null) return;
+      log.strictMask = log.mask;
+      if ((log.mask & 1) && log.borderReveal != null && CARDS[log.guess] && CARDS[log.guess].b !== Number(log.borderReveal)) log.strictMask &= ~1;
+    };
+    (state.activityHistory || []).forEach(migrateLog);
+    let matchedMask = 0;
+    let migratedPuzzleScore = 0;
+    let solved = false;
+    for (const log of state.logs || []) {
+      migrateLog(log);
+      if (log.type !== 'challenge') continue;
+      const before = matchedMask;
+      matchedMask |= log.strictMask;
+      solved = log.strictMask === 63;
+      log.delta = thresholdGain(before, matchedMask, state.config, state.puzzle) + (solved ? solveReward(state.config, state.puzzle) : 0);
+      migratedPuzzleScore += log.delta;
+    }
+    const scoreDifference = migratedPuzzleScore - Number(state.puzzleScore || 0);
+    state.matchedMask = matchedMask;
+    state.puzzleScore = migratedPuzzleScore;
+    state.totalScore = Math.max(0, Number(state.totalScore || 0) + scoreDifference);
+    if (isPremiumPuzzle()) state.premiumScore = Math.max(0, Number(state.premiumScore || 0) + scoreDifference);
+    else state.progressScore = Math.max(0, Number(state.progressScore || 0) + scoreDifference);
+    state.solved = solved;
+    challengeSemanticsMigrated = true;
+  }
+
   function candidateIndices(testState = state) {
     const result = [];
     outer: for (let index = 0; index < CARDS.length; index += 1) {
@@ -358,6 +396,7 @@
   }
 
   function render() {
+    migrateChallengeSemantics();
     candidateCache = candidateIndices();
     const config = state.config;
     $('#puzzleNumber').value = state.puzzle;
@@ -517,60 +556,66 @@
 
   function renderCandidates() {
     const container = $('#candidateTable');
-    const total = candidateMass();
-    if (!candidateCache.length) {
-      container.innerHTML = `<div class="empty-inline">当前反馈在此卡池中没有候选。可检查录入，或切换到“完整官方怪兽兜底”。</div>`;
-      return;
-    }
-    refreshCandidateFilterValues();
+    const poolIndices = CARDS.map((_, index) => index).filter((index) => weightOf(CARDS[index]) > 0);
+    const knownOnly = $('#candidateKnownOnly').checked;
+    const source = knownOnly ? candidateCache : poolIndices;
+    const total = candidateMass(source);
+    refreshDatabaseFilterValues(poolIndices);
     const query = normalizeSearch($('#candidateSearch').value || '');
-    const filterField = $('#candidateFilterField').value;
-    const filterValue = $('#candidateFilterValue').value;
     const sort = $('#candidateSort').value;
-    const filtered = candidateCache.filter((index) => {
+    const selected = (id) => new Set([...$(id).selectedOptions].map((option) => Number(option.value)));
+    const border = selected('#dbBorder'), attribute = selected('#dbAttribute'), race = selected('#dbRace');
+    const parseNumbers = (id, field) => new Set($(id).value.split(/[,，/／\s]+/).filter(Boolean).map((value) => {
+      const normalized = value.trim();
+      if (field === 'defense' && normalized === '无') return -3;
+      if ((field === 'attack' || field === 'defense') && normalized === '?') return -2;
+      return Number(normalized);
+    }).filter(Number.isFinite));
+    const numbers = parseNumbers('#dbNumber', 'number'), attacks = parseNumbers('#dbAttack', 'attack'), defenses = parseNumbers('#dbDefense', 'defense');
+    const filtered = source.filter((index) => {
       const card = CARDS[index];
       if (query && !card.names.some((name) => normalizeSearch(name).includes(query))) return false;
-      if (filterField !== 'all' && filterValue !== '' && fieldValue(card, filterField) !== Number(filterValue)) return false;
+      if (border.size && !border.has(card.b)) return false;
+      if (attribute.size && !attribute.has(card.a)) return false;
+      if (race.size && !race.has(card.r)) return false;
+      if (numbers.size && !numbers.has(card.n)) return false;
+      if (attacks.size && !attacks.has(card.atk)) return false;
+      if (defenses.size && !defenses.has(card.def)) return false;
       return true;
     });
     const comparators = {
       probability: (left, right) => weightOf(CARDS[right]) - weightOf(CARDS[left]) || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
       name: (left, right) => CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
       numberAsc: (left, right) => CARDS[left].n - CARDS[right].n || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
+      numberDesc: (left, right) => CARDS[right].n - CARDS[left].n || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
+      attackAsc: (left, right) => CARDS[left].atk - CARDS[right].atk || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
       attackDesc: (left, right) => CARDS[right].atk - CARDS[left].atk || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
+      defenseAsc: (left, right) => CARDS[left].def - CARDS[right].def || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
       defenseDesc: (left, right) => CARDS[right].def - CARDS[left].def || CARDS[left].name.localeCompare(CARDS[right].name, 'zh-CN'),
     };
-    const top = [...filtered].sort(comparators[sort] || comparators.probability).slice(0, 100);
+    const top = [...filtered].sort(comparators[sort] || comparators.probability).slice(0, 240);
     const totals = poolTotals();
     const filteredCards = candidateMass(filtered);
-    const currentCards = candidateMass(candidateCache);
-    $('#candidateMass').textContent = filtered.length === candidateCache.length
-      ? `完整卡 ${currentCards.toLocaleString('zh-CN')} / ${totals.cards.toLocaleString('zh-CN')} · 判定组 ${candidateCache.length.toLocaleString('zh-CN')} / ${totals.groups.toLocaleString('zh-CN')}`
-      : `筛选显示：完整卡 ${filteredCards.toLocaleString('zh-CN')} / ${currentCards.toLocaleString('zh-CN')} · 判定组 ${filtered.length.toLocaleString('zh-CN')} / ${candidateCache.length.toLocaleString('zh-CN')}`;
-    if (!top.length) { container.innerHTML = `<div class="empty-inline">没有符合当前搜索或筛选条件的候选卡。</div>`; return; }
-    container.innerHTML = `<div class="candidate-row header"><span>代表卡</span><span>边框</span><span>属性</span><span>种族</span><span>数值</span><span>攻／守</span><span>卡数／概率</span></div>` + top.map((index) => {
+    $('#candidateMass').textContent = `显示 ${filteredCards.toLocaleString('zh-CN')} / ${totals.cards.toLocaleString('zh-CN')} 张 · ${filtered.length.toLocaleString('zh-CN')} / ${totals.groups.toLocaleString('zh-CN')} 组${top.length < filtered.length ? ` · 首 ${top.length} 组` : ''}`;
+    if (!top.length) { container.innerHTML = `<div class="empty-inline">没有符合当前搜索或筛选条件的卡片。</div>`; return; }
+    const grid = container.dataset.view === 'grid';
+    container.classList.toggle('candidate-grid', grid);
+    container.innerHTML = (grid ? '' : `<div class="candidate-row header"><span>代表卡</span><span>边框</span><span>属性</span><span>种族</span><span>数值</span><span>攻／守</span><span>卡数／占当前范围</span></div>`) + top.map((index) => {
       const card = CARDS[index];
       const probability = total ? weightOf(card) / total : 0;
+      if (grid) return `<article class="database-card"><img data-card-index="${index}" alt="${escapeAttr(card.name)}卡图"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><small>${escapeHtml(formatBorder(card.b))} · ${escapeHtml(DATA.labels.attribute[card.a] || card.a)} · ${escapeHtml(DATA.labels.race[card.r] || card.r)}</small><span>${card.n} · ${formatStat(card.atk)}／${formatStat(card.def)} · ${weightOf(card)}张</span></article>`;
       return `<div class="candidate-row"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span><span class="prob">${weightOf(card).toLocaleString('zh-CN')}张 · ${formatPercent(probability)}</span></div>`;
     }).join('');
+    if (grid) hydrateCardImages(container);
   }
 
-  function refreshCandidateFilterValues() {
-    const field = $('#candidateFilterField').value;
-    const select = $('#candidateFilterValue');
-    const previous = select.value;
-    if (field === 'all') {
-      select.innerHTML = '<option value="">全部值</option>';
-      select.disabled = true;
-      return;
+  function refreshDatabaseFilterValues(source) {
+    for (const [id, field] of [['#dbBorder','border'],['#dbAttribute','attribute'],['#dbRace','race']]) {
+      const select = $(id);
+      if (select.options.length) continue;
+      const values = [...new Set(source.map((index) => fieldValue(CARDS[index], field)))].sort((a,b)=>formatValue(field,a).localeCompare(formatValue(field,b),'zh-CN'));
+      select.innerHTML = values.map((value) => `<option value="${value}">${escapeHtml(formatValue(field,value))}</option>`).join('');
     }
-    const values = [...new Set(candidateCache.map((index) => fieldValue(CARDS[index], field)))].sort((left, right) => {
-      if (['number', 'attack', 'defense'].includes(field)) return Number(left) - Number(right);
-      return formatValue(field, left).localeCompare(formatValue(field, right), 'zh-CN');
-    });
-    select.disabled = false;
-    select.innerHTML = '<option value="">全部值</option>' + values.map((value) => `<option value="${value}">${escapeHtml(formatValue(field, value))}</option>`).join('');
-    if (values.some((value) => String(value) === previous)) select.value = previous;
   }
 
   function historyItemHtml(log, expanded = false) {
@@ -580,9 +625,11 @@
       return `<article class="history-item history-reveal"><div class="history-symbol" data-field="${field.key}">${field.icon}</div><div><header><strong>第${puzzle}题 · ${sourceLabel(log.source)}</strong><time>${log.time || ''}</time></header><p>${field.label}：<b>${escapeHtml(formatValue(log.field, log.value))}</b></p>${expanded ? `<small>揭示用于筛选候选，不累计挑战奖励${log.candidates != null ? ` · 当时约 ${Number(log.candidates).toLocaleString('zh-CN')} 张候选` : ''}</small>` : ''}</div></article>`;
     }
     const guess = CARDS[log.guess];
-    const matchedFields = FIELDS.filter((field) => log.mask & field.bit);
+    const strictMask = log.strictMask == null ? log.mask : log.strictMask;
+    const matchedFields = FIELDS.filter((field) => strictMask & field.bit);
+    const partialBorder = Boolean((log.mask & 1) && !(strictMask & 1));
     const matched = matchedFields.map((field) => field.label).join('、') || '无相符项';
-    return `<article class="history-item history-challenge">${guess ? `<img data-card-index="${log.guess}" alt="${escapeAttr(guess.name)}卡图">` : '<div class="history-symbol">?</div>'}<div><header><strong>第${puzzle}题 · ${escapeHtml(guess?.name || '未知卡')}</strong><time>${log.time || ''}</time></header><p>${matched}${log.delta ? ` · <b>+${log.delta}</b>` : ''}</p><div class="history-match-chips">${matchedFields.map((field) => `<span>${field.icon} ${escapeHtml(field.label)}</span>`).join('') || '<span>0项相符</span>'}</div>${expanded && log.candidates != null ? `<small>操作前约 ${Number(log.candidates).toLocaleString('zh-CN')} 张候选</small>` : ''}</div></article>`;
+    return `<article class="history-item history-challenge">${guess ? `<img data-card-index="${log.guess}" alt="${escapeAttr(guess.name)}卡图">` : '<div class="history-symbol">?</div>'}<div><header><strong>第${puzzle}题 · ${escapeHtml(guess?.name || '未知卡')}</strong><time>${log.time || ''}</time></header><p>${matched}${partialBorder ? ' · 边框仅部分点亮' : ''}${log.delta ? ` · <b>+${log.delta}</b>` : ''}</p><div class="history-match-chips">${matchedFields.map((field) => `<span>${field.icon} ${escapeHtml(field.label)}</span>`).join('') || '<span>0项严格相符</span>'}</div>${expanded && log.candidates != null ? `<small>操作前约 ${Number(log.candidates).toLocaleString('zh-CN')} 张候选</small>` : ''}</div></article>`;
   }
 
   function hydrateCardImages(root) {
@@ -611,6 +658,100 @@
     $('#historyTimeline').innerHTML = history.length ? [...history].reverse().map((log) => historyItemHtml(log, true)).join('') : '<div class="empty-inline">当前窗口还没有历史记录。</div>';
     hydrateCardImages($('#historyTimeline'));
     if (!$('#historyDialog').open) $('#historyDialog').showModal();
+  }
+
+  function exportActivity() {
+    const payload = { format: 'card-decoder-activity', version: 1, exportedAt: new Date().toISOString(), state };
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `卡片解码者-活动记录-${new Date().toISOString().slice(0,10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    navigator.clipboard?.writeText(text).catch(() => {});
+    toast('活动记录已下载，并尝试复制到剪贴板。');
+  }
+
+  function parseImportedValue(field, raw) {
+    const text = String(raw).trim();
+    if (field === 'attack' || field === 'defense') {
+      if (text === '无') return -3;
+      if (text === '?') return -2;
+    }
+    if (['number','attack','defense'].includes(field) && Number.isFinite(Number(text))) return Number(text);
+    if (field === 'border') {
+      const value = [...new Set(CARDS.map((card)=>card.b))].find((item)=>formatBorder(item)===text);
+      if (value != null) return value;
+    }
+    if (field === 'attribute' || field === 'race') {
+      const entry = Object.entries(DATA.labels[field]).find(([,label])=>label===text);
+      if (entry) return Number(entry[0]);
+    }
+    throw new Error(`无法识别“${text}”作为${FIELDS.find((item)=>item.key===field)?.label || field}。`);
+  }
+
+  function importActionLines(text) {
+    const fieldAliases = new Map(FIELDS.flatMap((field)=>[[field.key,field],[field.label,field],[field.icon,field]]));
+    const next = freshState(state.config); next.pool=state.pool; next.theme=state.theme; next.imageQuality=state.imageQuality;
+    const lines=text.split(/\r?\n/).map((line)=>line.trim()).filter((line)=>line&&!line.startsWith('#'));
+    if (!lines.length) throw new Error('没有可导入的行动。');
+    for (let lineNumber=0;lineNumber<lines.length;lineNumber+=1) {
+      const parts=lines[lineNumber].split('|').map((part)=>part.trim());
+      const puzzle=clampInt(parts[0].replace(/^题/,''),1,next.config.puzzles,NaN),type=parts[1];
+      if (!Number.isFinite(puzzle)||!type) throw new Error(`第 ${lineNumber+1} 行格式不正确。`);
+      if (puzzle<next.puzzle||puzzle>next.puzzle+1) throw new Error(`第 ${lineNumber+1} 行题号不连续。`);
+      if (puzzle>next.puzzle) { next.puzzle=puzzle;next.known={};next.matchedMask=0;next.logs=[];next.initialUsed=false;next.solved=false;next.puzzleScore=0; }
+      if (type==='初始'||type==='提示') {
+        const field=fieldAliases.get(parts[2]); if(!field)throw new Error(`第 ${lineNumber+1} 行字段无效。`);
+        const source=type==='初始'?'initial':'hint',value=parseImportedValue(field.key,parts[3]);
+        if(next.known[field.key])throw new Error(`第 ${lineNumber+1} 行重复揭示了${field.label}。`);
+        if(source==='hint'){if(next.hints<=0)throw new Error(`第 ${lineNumber+1} 行提示库存不足。`);next.hints-=1;}else{if(next.initialUsed)throw new Error(`第 ${lineNumber+1} 行重复录入初始揭示。`);next.initialUsed=true;}
+        next.known[field.key]={value,source};
+        const log={type:'reveal',field:field.key,value,source,time:'导入',puzzle,activityId:next.activityId};next.logs.push(log);next.activityHistory.push(log);
+      } else if(type==='挑战') {
+        if(next.challenges<=0)throw new Error(`第 ${lineNumber+1} 行挑战库存不足。`);
+        const name=normalizeSearch(parts[2]),guess=CARDS.findIndex((card)=>card.names.some((item)=>normalizeSearch(item)===name));
+        if(guess<0)throw new Error(`第 ${lineNumber+1} 行找不到挑战卡“${parts[2]}”。`);
+        let mask=0;for(const token of (parts[3]||'').split(/[,，/／]+/).map((item)=>item.trim()).filter(Boolean)){const field=fieldAliases.get(token);if(!field)throw new Error(`第 ${lineNumber+1} 行无法识别点亮字段“${token}”。`);mask|=field.bit;}
+        const borderReveal=mask&1?parseImportedValue('border',parts[4]):null,numberReveal=mask&8?parseImportedValue('number',parts[5]):null;
+        const strictMask=mask&1&&CARDS[guess].b!==borderReveal?mask&~1:mask,before=next.matchedMask,after=before|strictMask,solved=strictMask===63;
+        let delta=thresholdGain(before,after,next.config,puzzle);if(solved)delta+=solveReward(next.config,puzzle);
+        next.matchedMask=after;next.challenges-=1;next.puzzleScore+=delta;next.totalScore+=delta;if(isPremiumPuzzle(puzzle,next.config))next.premiumScore+=delta;else next.progressScore+=delta;next.solved=solved;
+        for(const field of FIELDS)if(mask&field.bit)next.known[field.key]={value:field.key==='border'?borderReveal:field.key==='number'?numberReveal:fieldValue(CARDS[guess],field.key),source:'challenge'};
+        const log={type:'challenge',guess,mask,strictMask,borderReveal,numberReveal,delta,time:'导入',puzzle,activityId:next.activityId};next.logs.push(log);next.activityHistory.push(log);
+      } else throw new Error(`第 ${lineNumber+1} 行行动只能是“初始”“提示”或“挑战”。`);
+      if(!candidateIndices(next).length&&!next.solved)throw new Error(`第 ${lineNumber+1} 行与当前卡库冲突，候选归零。`);
+    }
+    return next;
+  }
+
+  function importActivity() {
+    try {
+      const raw=$('#activityImportText').value.trim();
+      let next;
+      if(raw.startsWith('{')){
+        const payload = JSON.parse(raw);
+        if (payload?.format !== 'card-decoder-activity' || payload.version !== 1 || !payload.state) throw new Error('不是有效的卡片解码者活动记录。');
+        const incoming = payload.state;
+        if (!Array.isArray(incoming.logs) || !incoming.known || !incoming.config) throw new Error('记录缺少必要的活动状态。');
+        next = { ...freshState(incoming.config), ...incoming, config: normalizeConfig(incoming.config) };
+      }else next=importActionLines(raw);
+      next.puzzle = clampInt(next.puzzle, 1, next.config.puzzles, 1);
+      next.hints = clampInt(next.hints, 0, 999, 0);
+      next.challenges = clampInt(next.challenges, 0, 999, 0);
+      next.matchedMask = clampInt(next.matchedMask, 0, 63, 0);
+      for (const log of next.logs) if (log.type === 'challenge' && (!Number.isInteger(log.guess) || !CARDS[log.guess])) throw new Error('记录引用了当前数据库中不存在的卡片。');
+      if (!candidateIndices(next).length && !next.solved) throw new Error('记录与当前卡库冲突，导入后候选会归零。');
+      pushUndo();
+      state = next;
+      challengeSemanticsMigrated = false;
+      testSession = null;
+      $('#importDialog').close();
+      $('#historyDialog').close();
+      render();
+      toast('活动记录已导入，可以从当前进度继续。');
+    } catch (error) { toast(`导入失败：${error.message}`); }
   }
 
   function openImageViewer(source) {
@@ -801,9 +942,10 @@
 
     pushUndo();
     const guess = CARDS[selectedGuess];
-    const newMask = state.matchedMask | feedbackMask;
+    const strictMask = feedbackMask & 1 && CARDS[selectedGuess].b !== borderReveal ? feedbackMask & ~1 : feedbackMask;
+    const newMask = state.matchedMask | strictMask;
     let delta = thresholdGain(state.matchedMask, newMask);
-    const solvedNow = feedbackMask === 63;
+    const solvedNow = strictMask === 63;
     if (solvedNow) delta += solveReward();
     state.matchedMask = newMask;
     state.challenges -= 1;
@@ -819,7 +961,7 @@
       if (field.key === 'number') value = numberReveal;
       state.known[field.key] = { value, source: 'challenge' };
     }
-    const log = { type: 'challenge', guess: selectedGuess, mask: feedbackMask, borderReveal, numberReveal, delta, time: timeLabel() };
+    const log = { type: 'challenge', guess: selectedGuess, mask: feedbackMask, strictMask, borderReveal, numberReveal, delta, time: timeLabel() };
     state.logs.push(log);
     appendHistory(log);
     if ($('#feedbackDialog').open) $('#feedbackDialog').close();
@@ -858,9 +1000,10 @@
         const target = CARDS[targetIndex];
         const weight = weightOf(target);
         const mask = matchMask(target, guess);
-        const newMask = oldMask | mask;
+        const strictMask = strictMatchMask(target, guess);
+        const newMask = oldMask | strictMask;
         let gain = thresholdGain(oldMask, newMask);
-        if (mask === 63) { gain += solveReward(); solveMass += weight; }
+        if (strictMask === 63) { gain += solveReward(); solveMass += weight; }
         immediateSum += gain * weight;
         newMatchesSum += (popcount(newMask) - oldCount) * weight;
         if (mask & 1) bitMass[0] += weight;
@@ -1044,7 +1187,7 @@
       const signature = candidates.map((targetIndex) => {
         const target = CARDS[targetIndex];
         const mask = matchMask(target, guess);
-        return `${mask}:${mask & 1 ? target.b : ''}:${mask & 8 ? target.n : ''}`;
+        return `${mask}:${strictMatchMask(target, guess)}:${mask & 1 ? target.b : ''}:${mask & 8 ? target.n : ''}`;
       }).join('|');
       if (!signatures.has(signature)) signatures.set(signature, guessIndex);
     }
@@ -1429,7 +1572,10 @@
   function openSimulation() {
     $('#simulationPool').value = state.pool;
     const config = state.config;
-    $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次。每一步使用与实操相同的精确／受限策略树，因此会明显慢于旧版快速基线。`;
+    const hardwareCap = Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
+    [...$('#simulationParallel').options].forEach((option)=>{option.disabled=Number(option.value)>hardwareCap;});
+    if (Number($('#simulationParallel').value) > hardwareCap) $('#simulationParallel').value=String([8,4,2,1].find((value)=>value<=hardwareCap));
+    $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次。每一步使用与实操相同的策略树。当前设备最多开放 ${hardwareCap} 路并行，推荐 4 路以平衡速度和内存。`;
     if (simulationSnapshot) renderSimulationSnapshot(simulationSnapshot);
     $('#runSimulationBtn').textContent = simulationRunning ? '停止后台测试' : '开始模拟';
     $('#simulationDialog').showModal();
@@ -1559,9 +1705,9 @@
       let solveMass = 0, newMatches = 0;
       const bitMass = [0,0,0,0,0,0];
       for (const targetIndex of candidates) {
-        const target = CARDS[targetIndex], weight = simulationWeight(target, pool), mask = matchMask(target, guess);
-        if (mask === 63) solveMass += weight;
-        newMatches += (popcount(matchedMask | mask) - oldCount) * weight;
+        const target = CARDS[targetIndex], weight = simulationWeight(target, pool), mask = matchMask(target, guess), strictMask = strictMatchMask(target, guess);
+        if (strictMask === 63) solveMass += weight;
+        newMatches += (popcount(matchedMask | strictMask) - oldCount) * weight;
         for (let bit = 0; bit < 6; bit += 1) if (mask & (1 << bit)) bitMass[bit] += weight;
       }
       let infoApprox = 0;
@@ -1575,7 +1721,7 @@
       const signatures = new Map();
       for (const action of universe) {
         if (guessed.has(action)) continue;
-        const signature = candidates.map((targetIndex) => { const target=CARDS[targetIndex],mask=matchMask(target,CARDS[action]); return `${mask}:${mask&1?target.b:''}:${mask&8?target.n:''}`; }).join('|');
+        const signature = candidates.map((targetIndex) => { const target=CARDS[targetIndex],guess=CARDS[action],mask=matchMask(target,guess); return `${mask}:${strictMatchMask(target,guess)}:${mask&1?target.b:''}:${mask&8?target.n:''}`; }).join('|');
         if (!signatures.has(signature)) signatures.set(signature, action);
       }
       try {
@@ -1644,18 +1790,19 @@
         guessed.add(guessIndex);
         const guess = CARDS[guessIndex];
         const mask = matchMask(target, guess);
-        matchedItems += popcount(matchedMask | mask) - popcount(matchedMask);
-        const gain = thresholdGain(matchedMask, matchedMask | mask, config, puzzle);
+        const strictMask = strictMatchMask(target, guess);
+        matchedItems += popcount(matchedMask | strictMask) - popcount(matchedMask);
+        const gain = thresholdGain(matchedMask, matchedMask | strictMask, config, puzzle);
         if (isPremiumPuzzle(puzzle, config)) premiumScore += gain;
         else progressScore += gain;
-        matchedMask |= mask;
+        matchedMask |= strictMask;
         // Matching challenge fields are revealed by the real game and therefore cannot be
         // selected by a later random hint. Omitting this made simulations waste hints on
         // already-known fields and systematically understated the policy's performance.
         for (const field of FIELDS) if (mask & field.bit) known.add(field.key);
         challenges -= 1;
         challengesUsed += 1;
-        if (mask === 63) {
+        if (strictMask === 63) {
           const bonus = solveReward(config, puzzle);
           if (isPremiumPuzzle(puzzle, config)) premiumScore += bonus; else progressScore += bonus;
           solved += 1; puzzleSolved = true; break;
@@ -1672,24 +1819,42 @@
     return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * fraction)))];
   }
 
+  function combinedSimulationSnapshot(parts, total, config) {
+    const results = parts.flatMap((part) => part?.results || []);
+    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','hintDecisions','challengeDecisions'];
+    const diagnostics = Object.fromEntries(diagnosticKeys.map((key) => [key, parts.reduce((sum, part) => sum + Number(part?.diagnostics?.[key] || 0), 0)]));
+    const average = (key) => results.length ? results.reduce((sum,item)=>sum+item[key],0)/results.length : 0;
+    const solvedValues = results.map((item)=>item.solved).sort((a,b)=>a-b), meanSolved=average('solved');
+    const variance=results.length>1?results.reduce((sum,item)=>sum+(item.solved-meanSolved)**2,0)/(results.length-1):0;
+    const margin=1.96*Math.sqrt(variance/Math.max(1,results.length));
+    const complete=results.filter((item)=>item.solved===config.puzzles).length,p=complete/Math.max(1,results.length),z=1.96,n=Math.max(1,results.length);
+    const center=(p+z*z/(2*n))/(1+z*z/n),wm=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/(1+z*z/n);
+    const finished=parts.length>0&&parts.every((part)=>['complete','cancelled','error'].includes(part?.type));
+    const cancelled=parts.some((part)=>part?.type==='cancelled');
+    return {type:finished?(cancelled?'cancelled':'complete'):'progress',completed:results.length,total,current:parts.find((part)=>part?.current&&part.type==='progress')?.current,summary:{count:results.length,meanSolved,solvedLow:Math.max(0,meanSolved-margin),solvedHigh:Math.min(config.puzzles,meanSolved+margin),p10:percentile(solvedValues,.1),p50:percentile(solvedValues,.5),p90:percentile(solvedValues,.9),completion:p,completionLow:Math.max(0,center-wm),completionHigh:Math.min(1,center+wm),matchedItems:average('matchedItems'),hintsUsed:average('hintsUsed'),challengesUsed:average('challengesUsed'),distribution:Array.from({length:config.puzzles+1},(_,solved)=>({solved,count:results.filter((item)=>item.solved===solved).length})).filter((item)=>item.count),diagnostics,elapsed:(performance.now()-simulationStartedAt)/1000}};
+  }
+
   function renderSimulationSnapshot(snapshot) {
     const { summary, current, completed = 0, total = 1, type } = snapshot;
     if (!summary) return;
     const ratio=Math.min(1,(completed+(current?Math.max(0,current.puzzle-1)/Math.max(1,state.config.puzzles):0))/Math.max(1,total));
     $('#simulationProgress').hidden=false;
     $('#simulationProgress span').style.width=`${ratio*100}%`;
-    const runningText=current?`第 ${current.round}/${total} 个活动 · 第 ${current.puzzle} 题 · 候选 ${current.candidates.toLocaleString('zh-CN')} · 库存 ${current.hints}提示/${current.challenges}挑战`:`已完成 ${completed}/${total}`;
+    const runningText=current?`并行任务进行中 · 已完成 ${completed}/${total} · 当前第 ${current.puzzle} 题 · 候选 ${current.candidates.toLocaleString('zh-CN')} · 库存 ${current.hints}提示/${current.challenges}挑战`:`已完成 ${completed}/${total}`;
     $('#simulationProgress strong').textContent=type==='complete'?`已完成 ${completed}/${total}`:type==='cancelled'?`已停止，完成 ${completed}/${total}`:runningText;
     const d=summary.diagnostics,distribution=summary.distribution||[];
     $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次求解 · ${d.cacheHits} 次缓存 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
   }
 
   function runSimulation() {
-    if (simulationRunning) { simulationWorker?.postMessage({type:'cancel'}); $('#runSimulationBtn').textContent='正在停止…'; return; }
+    if (simulationRunning) { simulationWorkers.forEach(({worker})=>worker.postMessage({type:'cancel'})); $('#runSimulationBtn').textContent='正在停止…'; return; }
     const rounds = clampInt($('#simulationRounds').value, 1, 500, 50);
     const pool = $('#simulationPool').value;
     const config = normalizeConfig(state.config);
+    const hardwareCap = Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
+    const parallel = Math.min(rounds, hardwareCap, clampInt($('#simulationParallel').value, 1, 8, 4));
     simulationRunning = true;
+    simulationStartedAt = performance.now();
     $('#runSimulationBtn').textContent = '停止后台测试';
     $('#simulationProgress').hidden = false;
     $('#simulationResults').innerHTML = '';
@@ -1700,17 +1865,24 @@
       return;
     }
     simulationWorkerUrl=URL.createObjectURL(new Blob([window.SIMULATION_WORKER_SOURCE],{type:'text/javascript'}));
-    simulationWorker = new Worker(simulationWorkerUrl);
-    simulationWorker.onmessage = ({data}) => {
-      simulationSnapshot=data; renderSimulationSnapshot(data);
-      if(['complete','cancelled','error'].includes(data.type)){
-        simulationRunning=false; $('#runSimulationBtn').textContent='重新开始'; simulationWorker.terminate(); simulationWorker=null; URL.revokeObjectURL(simulationWorkerUrl); simulationWorkerUrl=null;
-        if(data.type==='error'){ $('#simulationResults').innerHTML=`<div class="empty-inline">后台测试失败：${escapeHtml(data.message)}</div>`; }
-      }
-    };
-    simulationWorker.onerror = (event) => { simulationRunning=false; $('#runSimulationBtn').textContent='重新开始'; $('#simulationResults').innerHTML=`<div class="empty-inline">后台测试失败：${escapeHtml(event.message)}</div>`; if(simulationWorkerUrl){URL.revokeObjectURL(simulationWorkerUrl);simulationWorkerUrl=null;} };
     const compactCards=CARDS.map(({b,a,r,n,nm,atk,def,wm,wa})=>({b,a,r,n,nm,atk,def,wm,wa}));
-    simulationWorker.postMessage({type:'start',cards:compactCards,config,pool,rounds});
+    const parts=Array.from({length:parallel},()=>null);
+    simulationWorkers=Array.from({length:parallel},(_,index)=>{
+      const worker=new Worker(simulationWorkerUrl);
+      const workerRounds=Math.floor(rounds/parallel)+(index<rounds%parallel?1:0);
+      worker.onmessage=({data})=>{
+        parts[index]=data;
+        const combined=combinedSimulationSnapshot(parts,rounds,config);
+        simulationSnapshot=combined;renderSimulationSnapshot(combined);
+        if(parts.every((part)=>part&&['complete','cancelled','error'].includes(part.type))){
+          simulationRunning=false;$('#runSimulationBtn').textContent='重新开始';simulationWorkers.forEach((item)=>item.worker.terminate());simulationWorkers=[];URL.revokeObjectURL(simulationWorkerUrl);simulationWorkerUrl=null;
+          const failure=parts.find((part)=>part.type==='error');if(failure)toast(`部分并行任务失败：${failure.message}`);
+        }
+      };
+      worker.onerror=(event)=>{parts[index]={type:'error',results:parts[index]?.results||[],diagnostics:parts[index]?.diagnostics||{},message:event.message};worker.terminate();};
+      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds});
+      return {worker,rounds:workerRounds};
+    });
   }
 
   function bindEvents() {
@@ -1758,12 +1930,20 @@
       pushUndo(); state.pool = event.target.value; render();
     });
     $('#candidateSearch').addEventListener('input', renderCandidates);
-    $('#candidateFilterField').addEventListener('change', () => { $('#candidateFilterValue').value = ''; refreshCandidateFilterValues(); renderCandidates(); });
-    $('#candidateFilterValue').addEventListener('change', renderCandidates);
+    $('#candidateKnownOnly').addEventListener('change', renderCandidates);
+    ['#dbBorder','#dbAttribute','#dbRace','#dbNumber','#dbAttack','#dbDefense'].forEach((id)=>$(id).addEventListener(id.startsWith('#db')&&['#dbBorder','#dbAttribute','#dbRace'].includes(id)?'change':'input',renderCandidates));
     $('#candidateSort').addEventListener('change', renderCandidates);
+    $('#candidateTableView').addEventListener('click',()=>{$('#candidateTable').dataset.view='table';$('#candidateTableView').classList.add('is-active');$('#candidateGridView').classList.remove('is-active');renderCandidates();});
+    $('#candidateGridView').addEventListener('click',()=>{$('#candidateTable').dataset.view='grid';$('#candidateGridView').classList.add('is-active');$('#candidateTableView').classList.remove('is-active');renderCandidates();});
+    $('#clearDbFilters').addEventListener('click',()=>{$('#candidateSearch').value='';['#dbBorder','#dbAttribute','#dbRace'].forEach((id)=>[...$(id).options].forEach((option)=>{option.selected=false;}));['#dbNumber','#dbAttack','#dbDefense'].forEach((id)=>{$(id).value='';});renderCandidates();});
     $('#openHistoryBtn').addEventListener('click', openHistoryArchive);
     $('#historyCloseBtn').addEventListener('click', () => $('#historyDialog').close());
     $('#historyDoneBtn').addEventListener('click', () => $('#historyDialog').close());
+    $('#exportActivityBtn').addEventListener('click', exportActivity);
+    $('#importActivityBtn').addEventListener('click', () => { $('#activityImportText').value=''; $('#importDialog').showModal(); });
+    $('#importCloseBtn').addEventListener('click',()=>$('#importDialog').close());
+    $('#importCancelBtn').addEventListener('click',()=>$('#importDialog').close());
+    $('#importForm').addEventListener('submit',(event)=>{event.preventDefault();importActivity();});
     $('#clearArchiveBtn').addEventListener('click', () => {
       if (!confirm('清除当前窗口中保存的旧活动档案？当前活动记录仍会保留。')) return;
       sessionStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(state.activityHistory || []));

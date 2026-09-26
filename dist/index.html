@@ -68,7 +68,7 @@
       <div class="section-heading compact"><div><p class="eyebrow">分析记录</p><h2>候选与历史</h2></div><div class="lower-actions"><label>卡池 <select id="poolMode"><option value="md">大师决斗游戏内校准卡池</option><option value="all">完整官方怪兽兜底</option></select></label><button id="undoBtn" class="quiet-btn" type="button">撤销</button><button id="resetPuzzleBtn" class="danger-btn" type="button">重置本题</button></div></div>
       <p class="pool-caveat" id="poolCaveat"></p>
       <div class="analysis-grid">
-        <div class="candidate-table-wrap"><div class="subheading"><h3>候选卡</h3><span id="candidateMass"></span></div><div class="candidate-tools"><input id="candidateSearch" type="search" placeholder="搜索候选卡名" aria-label="搜索候选卡名"><select id="candidateFilterField" aria-label="筛选字段"><option value="all">全部字段</option><option value="border">边框</option><option value="attribute">属性</option><option value="race">种族</option><option value="number">等级／阶级／连接</option><option value="attack">攻击力</option><option value="defense">守备力</option></select><select id="candidateFilterValue" aria-label="筛选值" disabled><option value="">全部值</option></select><select id="candidateSort" aria-label="候选排序"><option value="probability">概率优先</option><option value="name">名称</option><option value="numberAsc">数值从小到大</option><option value="attackDesc">攻击力从高到低</option><option value="defenseDesc">守备力从高到低</option></select></div><div class="candidate-table" id="candidateTable"></div></div>
+        <div class="candidate-table-wrap"><div class="subheading"><h3>卡片数据库</h3><span id="candidateMass"></span></div><div class="database-scope"><label><input id="candidateKnownOnly" type="checkbox"> 仅显示符合当前已知信息</label><div><button id="candidateTableView" class="quiet-btn is-active" type="button">列表</button><button id="candidateGridView" class="quiet-btn" type="button">图格</button></div></div><div class="candidate-tools"><input id="candidateSearch" type="search" placeholder="搜索卡名" aria-label="搜索卡名"><select id="candidateSort" aria-label="候选排序"><option value="probability">卡数／概率优先</option><option value="name">名称</option><option value="numberAsc">数值从小到大</option><option value="numberDesc">数值从大到小</option><option value="attackAsc">攻击力从低到高</option><option value="attackDesc">攻击力从高到低</option><option value="defenseAsc">守备力从低到高</option><option value="defenseDesc">守备力从高到低</option></select></div><div class="database-filters"><label><span>边框（可多选）</span><select id="dbBorder" multiple size="4"></select></label><label><span>属性（可多选）</span><select id="dbAttribute" multiple size="4"></select></label><label><span>种族（可多选）</span><select id="dbRace" multiple size="4"></select></label><label><span>等级／阶级／连接</span><input id="dbNumber" type="text" placeholder="例：4,8,12"></label><label><span>攻击力</span><input id="dbAttack" type="text" placeholder="例：0,100,500"></label><label><span>守备力</span><input id="dbDefense" type="text" placeholder="例：0,1000,无"></label><button id="clearDbFilters" class="quiet-btn" type="button">清空筛选</button></div><p class="filter-help">同一项内取并集，不同项之间取交集。例如：（效果／超量）且炎属性且攻击力为 0／100／500。</p><div class="candidate-table" id="candidateTable"></div></div>
         <div class="history-wrap"><div class="subheading"><h3>活动轨迹</h3><div class="history-heading-actions"><span id="historyCount">0 条</span><button id="openHistoryBtn" class="quiet-btn" type="button">打开档案</button></div></div><div class="history-list" id="historyList"></div></div>
       </div>
       <footer class="data-note"><span id="dataStats">正在载入卡库…</span><button id="resetEventBtn" type="button">重置整个活动</button></footer>
@@ -100,7 +100,7 @@
   <dialog id="feedbackDialog" class="modal feedback-modal">
     <form method="dialog" class="modal-card" id="feedbackForm">
       <header><div><p class="eyebrow">真实活动录入</p><h2>本次挑战判定</h2></div><button id="feedbackCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
-      <p class="modal-note">只有真实活动需要这一步；测试和小游戏模式会自动生成判定。</p>
+      <p class="modal-note">只有真实活动需要这一步；测试和小游戏模式会自动生成判定。灵摆复合边框可能点亮并显示完整边框，但仅在完整边框一致时计为严格相符。</p>
       <div class="feedback-grid" id="feedbackGrid" aria-label="挑战反馈"></div>
       <div class="special-reveals" id="specialReveals" hidden><label id="borderRevealWrap" hidden><span>目标显示的完整边框</span><select id="borderReveal"></select></label><label id="numberRevealWrap" hidden><span>目标显示的等级／阶级／连接</span><select id="numberReveal"></select></label></div>
       <footer><button id="feedbackCancelBtn" class="quiet-btn" type="button">取消</button><button class="primary-btn" id="confirmFeedbackBtn" type="submit">保存判定并扣除挑战</button></footer>
@@ -112,14 +112,17 @@
       <header><div><p class="eyebrow">活动与窗口记录</p><h2>解码档案</h2></div><button id="historyCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
       <div class="history-summary" id="historySummary"></div>
       <div class="history-timeline" id="historyTimeline"></div>
-      <footer><button id="clearArchiveBtn" class="danger-btn" type="button">清除旧活动档案</button><button id="historyDoneBtn" class="primary-btn" type="button">完成</button></footer>
+      <footer><button id="clearArchiveBtn" class="danger-btn" type="button">清除旧活动档案</button><button id="exportActivityBtn" class="quiet-btn" type="button">导出当前活动</button><button id="importActivityBtn" class="quiet-btn" type="button">导入活动记录</button><button id="historyDoneBtn" class="primary-btn" type="button">完成</button></footer>
     </div>
+  </dialog>
+  <dialog id="importDialog" class="modal">
+    <form method="dialog" class="modal-card" id="importForm"><header><div><p class="eyebrow">跨设备／隔日续用</p><h2>导入活动记录</h2></div><button id="importCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header><p class="modal-note">可粘贴导出的 JSON；也可逐行输入“题号｜行动｜结果”。挑战行依次填写卡名、点亮字段、显示的完整边框、显示的等级数值，不适用处写“-”。导入前会逐条校验。</p><textarea id="activityImportText" rows="14" spellcheck="false" placeholder="1|初始|属性|暗&#10;1|提示|攻击力|1000&#10;1|挑战|效果遮蒙者|属性,种族,攻击力|-|-&#10;1|挑战|某灵摆卡|边框,属性|效果|-"></textarea><footer><button id="importCancelBtn" class="quiet-btn" type="button">取消</button><button class="primary-btn" type="submit">检查并导入</button></footer></form>
   </dialog>
 
   <dialog id="simulationDialog" class="modal">
     <form method="dialog" class="modal-card simulation-card" id="simulationForm">
       <header><div><p class="eyebrow">快速近似模拟</p><h2>规模测试</h2></div><button id="simulationCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
-      <div class="settings-grid compact-grid"><label><span>模拟活动数</span><input id="simulationRounds" type="number" min="1" max="500" value="50"></label><label><span>测试卡池</span><select id="simulationPool"><option value="md">大师决斗游戏内校准卡池</option><option value="all">完整官方怪兽兜底</option></select></label></div>
+      <div class="settings-grid compact-grid"><label><span>模拟活动数</span><input id="simulationRounds" type="number" min="1" max="500" value="50"></label><label><span>并行任务数</span><select id="simulationParallel"><option value="1">1（最省内存）</option><option value="2">2</option><option value="4" selected>4（推荐）</option><option value="8">8（高性能设备）</option></select></label><label><span>测试卡池</span><select id="simulationPool"><option value="md">大师决斗游戏内校准卡池</option><option value="all">完整官方怪兽兜底</option></select></label></div>
       <p id="simulationConfigSummary" class="modal-note"></p>
       <div id="simulationProgress" class="simulation-progress" hidden><span></span><strong>准备中…</strong></div>
       <div id="simulationResults" class="simulation-results"><div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div></div>

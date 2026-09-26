@@ -39,6 +39,12 @@
     return mask;
   }
 
+  function strictMatchMask(target, guess) {
+    let mask = matchMask(target, guess);
+    if (target.b !== guess.b) mask &= ~1;
+    return mask;
+  }
+
   function thresholdGain(config, puzzle, beforeMask, afterMask) {
     const before = popcount(beforeMask);
     const after = popcount(afterMask);
@@ -129,15 +135,16 @@
         for (const targetIndex of state.candidates) {
           const target = cards[targetIndex];
           const match = matchMask(target, cards[guessIndex]);
-          const keyPart = `${match}|${match & 1 ? target.b : ''}|${match & 8 ? target.n : ''}`;
-          if (!outcomes.has(keyPart)) outcomes.set(keyPart, { match, targets: [] });
+          const strict = strictMatchMask(target, cards[guessIndex]);
+          const keyPart = `${match}|${strict}|${match & 1 ? target.b : ''}|${match & 8 ? target.n : ''}`;
+          if (!outcomes.has(keyPart)) outcomes.set(keyPart, { match, strict, targets: [] });
           outcomes.get(keyPart).targets.push(targetIndex);
         }
         let actionValue = [...ZERO];
         for (const outcome of outcomes.values()) {
           const probability = mass(outcome.targets) / total;
-          const solved = outcome.match === 63;
-          let branch = rewardVector(config, state.puzzle, state.matchedMask, outcome.match, solved);
+          const solved = outcome.strict === 63;
+          let branch = rewardVector(config, state.puzzle, state.matchedMask, outcome.strict, solved);
           if (solved) {
             branch = add(branch, initialValue(state.puzzle + 1, state.hints, state.challenges - 1).value);
           } else {
@@ -148,7 +155,7 @@
               challenges: state.challenges - 1,
               candidates: outcome.targets,
               knownMask: state.knownMask | outcome.match,
-              matchedMask: state.matchedMask | outcome.match,
+              matchedMask: state.matchedMask | outcome.strict,
               guessed,
             });
             branch = add(branch, child.value);
@@ -226,13 +233,13 @@
       if (state.challenges > 0) for (const guessIndex of actions) {
         if(state.guessed.has(guessIndex))continue;
         const outcomes=new Map();
-        for(const targetIndex of state.candidates){const match=matchMask(cards[targetIndex],cards[guessIndex]);const k=`${match}|${match&1?cards[targetIndex].b:''}|${match&8?cards[targetIndex].n:''}`;if(!outcomes.has(k))outcomes.set(k,{match,targets:[]});outcomes.get(k).targets.push(targetIndex);}
+        for(const targetIndex of state.candidates){const match=matchMask(cards[targetIndex],cards[guessIndex]),strict=strictMatchMask(cards[targetIndex],cards[guessIndex]);const k=`${match}|${strict}|${match&1?cards[targetIndex].b:''}|${match&8?cards[targetIndex].n:''}`;if(!outcomes.has(k))outcomes.set(k,{match,strict,targets:[]});outcomes.get(k).targets.push(targetIndex);}
         let value=[...ZERO];
         for(const outcome of outcomes.values()){
-          const p=mass(outcome.targets)/total,solved=outcome.match===63;
-          let branch=rewardVector({},0,state.matchedMask,outcome.match,solved);
+          const p=mass(outcome.targets)/total,solved=outcome.strict===63;
+          let branch=rewardVector({},0,state.matchedMask,outcome.strict,solved);
           if(solved) branch=add(branch,continuationValue(state.hints,state.challenges-1));
-          else {const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.match,guessed},depth-1).value);}
+          else {const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.strict,guessed},depth-1).value);}
           value=add(value,scale(branch,p));
         }
         consider(value,{type:'challenge',index:guessIndex});
@@ -243,5 +250,5 @@
     return {...result,expandedStates,memoStates:memo.size,depth:maxDepth,method:'restricted-horizon'};
   }
 
-  root.DecoderSolver = { FIELDS, add, scale, compare, maxVector, matchMask, solveExact, solveRestrictedHorizon, stateUpperBound };
+  root.DecoderSolver = { FIELDS, add, scale, compare, maxVector, matchMask, strictMatchMask, solveExact, solveRestrictedHorizon, stateUpperBound };
 })(typeof window !== 'undefined' ? window : globalThis);
