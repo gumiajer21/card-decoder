@@ -89,6 +89,7 @@
   let simulationStartedAt = 0;
   let wallpaperTimer = null;
   let challengeSemanticsMigrated = false;
+  let manualImportLines = [];
 
   function loadState() {
     try {
@@ -563,15 +564,9 @@
     refreshDatabaseFilterValues(poolIndices);
     const query = normalizeSearch($('#candidateSearch').value || '');
     const sort = $('#candidateSort').value;
-    const selected = (id) => new Set([...$(id).selectedOptions].map((option) => Number(option.value)));
+    const selected = (id) => new Set([...$(id).querySelectorAll('input[type="checkbox"]:checked')].map((input) => Number(input.value)));
     const border = selected('#dbBorder'), attribute = selected('#dbAttribute'), race = selected('#dbRace');
-    const parseNumbers = (id, field) => new Set($(id).value.split(/[,，/／\s]+/).filter(Boolean).map((value) => {
-      const normalized = value.trim();
-      if (field === 'defense' && normalized === '无') return -3;
-      if ((field === 'attack' || field === 'defense') && normalized === '?') return -2;
-      return Number(normalized);
-    }).filter(Number.isFinite));
-    const numbers = parseNumbers('#dbNumber', 'number'), attacks = parseNumbers('#dbAttack', 'attack'), defenses = parseNumbers('#dbDefense', 'defense');
+    const numbers = selected('#dbNumber'), attacks = selected('#dbAttack'), defenses = selected('#dbDefense');
     const filtered = source.filter((index) => {
       const card = CARDS[index];
       if (query && !card.names.some((name) => normalizeSearch(name).includes(query))) return false;
@@ -600,22 +595,28 @@
     if (!top.length) { container.innerHTML = `<div class="empty-inline">没有符合当前搜索或筛选条件的卡片。</div>`; return; }
     const grid = container.dataset.view === 'grid';
     container.classList.toggle('candidate-grid', grid);
-    container.innerHTML = (grid ? '' : `<div class="candidate-row header"><span>代表卡</span><span>边框</span><span>属性</span><span>种族</span><span>数值</span><span>攻／守</span><span>卡数／占当前范围</span></div>`) + top.map((index) => {
+    container.innerHTML = (grid ? '' : `<div class="candidate-row header"><span>卡图</span><span>代表卡</span><span>边框</span><span>属性</span><span>种族</span><span>数值</span><span>攻／守</span><span>卡数／占当前范围</span></div>`) + top.map((index) => {
       const card = CARDS[index];
       const probability = total ? weightOf(card) / total : 0;
       if (grid) return `<article class="database-card"><img data-card-index="${index}" alt="${escapeAttr(card.name)}卡图"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><small>${escapeHtml(formatBorder(card.b))} · ${escapeHtml(DATA.labels.attribute[card.a] || card.a)} · ${escapeHtml(DATA.labels.race[card.r] || card.r)}</small><span>${card.n} · ${formatStat(card.atk)}／${formatStat(card.def)} · ${weightOf(card)}张</span></article>`;
-      return `<div class="candidate-row"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span><span class="prob">${weightOf(card).toLocaleString('zh-CN')}张 · ${formatPercent(probability)}</span></div>`;
+      return `<div class="candidate-row"><img class="candidate-thumb" data-card-index="${index}" alt="${escapeAttr(card.name)}卡图"><strong title="${escapeAttr(card.names.join('、'))}">${escapeHtml(card.name)}</strong><span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span><span class="prob">${weightOf(card).toLocaleString('zh-CN')}张 · ${formatPercent(probability)}</span></div>`;
     }).join('');
-    if (grid) hydrateCardImages(container);
+    hydrateCardImages(container);
   }
 
   function refreshDatabaseFilterValues(source) {
-    for (const [id, field] of [['#dbBorder','border'],['#dbAttribute','attribute'],['#dbRace','race']]) {
-      const select = $(id);
-      if (select.options.length) continue;
-      const values = [...new Set(source.map((index) => fieldValue(CARDS[index], field)))].sort((a,b)=>formatValue(field,a).localeCompare(formatValue(field,b),'zh-CN'));
-      select.innerHTML = values.map((value) => `<option value="${value}">${escapeHtml(formatValue(field,value))}</option>`).join('');
+    for (const [id, field, label] of [['#dbBorder','border','边框'],['#dbAttribute','attribute','属性'],['#dbRace','race','种族'],['#dbNumber','number','等级／阶级／连接'],['#dbAttack','attack','攻击力'],['#dbDefense','defense','守备力']]) {
+      const container = $(id);
+      if (container.dataset.ready) continue;
+      const values = [...new Set(source.map((index) => fieldValue(CARDS[index], field)))].sort((a,b)=>['number','attack','defense'].includes(field)?Number(a)-Number(b):formatValue(field,a).localeCompare(formatValue(field,b),'zh-CN'));
+      container.innerHTML = `<details class="filter-picker"><summary><span>${label}</span><b data-filter-count>全部</b></summary><div class="filter-picker-body"><input type="search" placeholder="搜索${label}" aria-label="搜索${label}"><div class="filter-options">${values.map((value)=>`<label data-filter-label="${escapeAttr(normalizeSearch(formatValue(field,value)))}"><input type="checkbox" value="${value}"><span>${escapeHtml(formatValue(field,value))}</span></label>`).join('')}</div></div></details>`;
+      container.dataset.ready='true';
     }
+    updateFilterCounts();
+  }
+
+  function updateFilterCounts() {
+    $$('.filter-picker').forEach((picker)=>{const count=picker.querySelectorAll('input[type="checkbox"]:checked').length;picker.querySelector('[data-filter-count]').textContent=count?`已选 ${count}`:'全部';});
   }
 
   function historyItemHtml(log, expanded = false) {
@@ -754,6 +755,55 @@
     } catch (error) { toast(`导入失败：${error.message}`); }
   }
 
+  function populateManualValue() {
+    const field=$('#manualField').value;
+    const values=[...new Set(CARDS.filter((card)=>weightOf(card)>0).map((card)=>fieldValue(card,field)))].sort((a,b)=>['number','attack','defense'].includes(field)?a-b:formatValue(field,a).localeCompare(formatValue(field,b),'zh-CN'));
+    $('#manualValue').innerHTML=values.map((value)=>`<option value="${value}">${escapeHtml(formatValue(field,value))}</option>`).join('');
+  }
+
+  function renderManualImport() {
+    const challenge=$('#manualAction').value==='挑战';
+    $('#manualRevealFields').hidden=challenge;$('#manualChallengeFields').hidden=!challenge;
+    $('#manualMatchFields').innerHTML=FIELDS.map((field)=>`<label><input type="checkbox" value="${field.key}"><span>${field.label}</span></label>`).join('');
+    $('#manualRecordCount').textContent=`${manualImportLines.length} 条`;
+    $('#manualRecordList').innerHTML=manualImportLines.length?manualImportLines.map((line,index)=>`<div class="manual-record-row"><span>${escapeHtml(line)}</span><button type="button" data-remove-manual="${index}" aria-label="删除">×</button></div>`).join(''):'<div class="empty-inline">尚未添加行动。</div>';
+  }
+
+  function resolveManualCard() {
+    const name=normalizeSearch($('#manualCardName').value);
+    const index=CARDS.findIndex((card)=>card.names.some((item)=>normalizeSearch(item)===name));
+    return index;
+  }
+
+  function updateManualChallengeSpecials() {
+    const selected=new Set([...$('#manualMatchFields').querySelectorAll('input:checked')].map((input)=>input.value));
+    const index=resolveManualCard();
+    $('#manualPendulumExactWrap').hidden=!selected.has('border')||index<0||!(CARDS[index].b&128);
+    $('#manualNumberWrap').hidden=!selected.has('number');
+  }
+
+  function addManualRecord() {
+    const puzzle=clampInt($('#manualPuzzle').value,1,state.config.puzzles,1),action=$('#manualAction').value;
+    if(action!=='挑战'){
+      const field=$('#manualField').value,value=formatValue(field,Number($('#manualValue').value));
+      manualImportLines.push(`${puzzle}|${action}|${FIELDS.find((item)=>item.key===field).label}|${value}`);
+    }else{
+      const index=resolveManualCard();if(index<0){toast('请填写数据库中完整的挑战卡名。');return;}
+      const card=CARDS[index],selected=[...$('#manualMatchFields').querySelectorAll('input:checked')].map((input)=>input.value),labels=selected.map((key)=>FIELDS.find((field)=>field.key===key).label);
+      const border=selected.includes('border')?($('#manualPendulumExact').checked?formatBorder(card.b):formatBorder(card.b^128)):'-';
+      const number=selected.includes('number')?String(clampInt($('#manualNumberValue').value,0,13,card.n)):'-';
+      manualImportLines.push(`${puzzle}|挑战|${card.name}|${labels.join(',')}|${border}|${number}`);
+    }
+    renderManualImport();
+  }
+
+  function applyManualRecords() {
+    if(!manualImportLines.length){toast('请至少添加一条行动记录。');return;}
+    $('#activityImportText').value=manualImportLines.join('\n');
+    importActivity();
+    $('#manualImportDialog').close();$('#activityDataDialog').close();
+  }
+
   function openImageViewer(source) {
     if (!source || source.hidden || source.dataset.zoomable !== 'true') return;
     const dialog = $('#imageViewerDialog');
@@ -867,6 +917,8 @@
   function selectGuess(index) {
     selectedGuess = Number(index);
     feedbackMask = 0;
+    $('#pendulumBorderExact').checked = true;
+    delete $('#pendulumBorderExact').dataset.autoExact;
     const card = CARDS[selectedGuess];
     $('#cardSearch').value = card.name;
     $('#searchResults').hidden = true;
@@ -895,9 +947,10 @@
     const borderOn = Boolean(feedbackMask & 1);
     const numberOn = Boolean(feedbackMask & 8);
     $('#specialReveals').hidden = !(borderOn || numberOn);
-    $('#borderRevealWrap').hidden = !borderOn;
+    $('#pendulumExactWrap').hidden = !borderOn || !(guess.b & 128);
     $('#numberRevealWrap').hidden = !numberOn;
-    if (borderOn) populateSpecialReveal('border');
+    if (borderOn && guess.b & 128) $('#feedbackNote').textContent = '这张挑战卡含灵摆。边框点亮后，请额外确认游戏是否把“边框”计为严格相符。';
+    else $('#feedbackNote').textContent = '勾选游戏中亮起的项目；测试和小游戏模式会自动生成判定。';
     if (numberOn) populateSpecialReveal('number');
   }
 
@@ -906,15 +959,15 @@
     const values = new Set();
     for (const index of candidateCache) {
       const target = CARDS[index];
-      const matches = field === 'border' ? Boolean(target.b & guess.b) : Boolean(target.nm & guess.nm);
-      if (matches) values.add(field === 'border' ? target.b : target.n);
+      const matches = Boolean(target.nm & guess.nm);
+      if (matches) values.add(target.n);
     }
-    const select = field === 'border' ? $('#borderReveal') : $('#numberReveal');
+    const select = $('#numberReveal');
     const currentKnown = state.known[field]?.value;
     select.innerHTML = [...values].sort((a, b) => a - b).map((value) => `<option value="${value}">${escapeHtml(formatValue(field, value))}</option>`).join('');
     if (currentKnown != null && values.has(Number(currentKnown))) select.value = String(currentKnown);
     else {
-      const guessed = field === 'border' ? guess.b : guess.n;
+      const guessed = guess.n;
       if (values.has(guessed)) select.value = String(guessed);
     }
   }
@@ -932,16 +985,18 @@
     if (selectedGuess == null) { toast('请先选择挑战卡。'); return; }
     if (state.challenges <= 0) { toast('挑战库存不足。'); return; }
     if (state.logs.some((log) => log.type === 'challenge' && log.guess === selectedGuess)) { toast('同题重复挑战这张卡不会扣次数，也不会留下记录。'); return; }
-    const borderReveal = feedbackMask & 1 ? Number($('#borderReveal').value) : null;
+    const guess = CARDS[selectedGuess];
+    const automaticExact=$('#pendulumBorderExact').dataset.autoExact;
+    const borderExact = automaticExact !== undefined ? automaticExact === 'true' : (!(feedbackMask & 1) || !(guess.b & 128) || $('#pendulumBorderExact').checked);
+    delete $('#pendulumBorderExact').dataset.autoExact;
+    const borderReveal = feedbackMask & 1 ? (borderExact ? guess.b : (guess.b ^ 128)) : null;
     const numberReveal = feedbackMask & 8 ? Number($('#numberReveal').value) : null;
-    if ((feedbackMask & 1) && Number.isNaN(borderReveal)) { toast('请录入目标显示的完整边框。'); return; }
     if ((feedbackMask & 8) && Number.isNaN(numberReveal)) { toast('请录入目标显示的等级／阶级／连接值。'); return; }
     const trial = clone(state);
     trial.logs.push({ type: 'challenge', guess: selectedGuess, mask: feedbackMask, borderReveal, numberReveal });
     if (!candidateIndices(trial).length) { toast('这组反馈与当前卡池冲突，请检查勾选，或切换完整卡池。'); return; }
 
     pushUndo();
-    const guess = CARDS[selectedGuess];
     const strictMask = feedbackMask & 1 && CARDS[selectedGuess].b !== borderReveal ? feedbackMask & ~1 : feedbackMask;
     const newMask = state.matchedMask | strictMask;
     let delta = thresholdGain(state.matchedMask, newMask);
@@ -1564,7 +1619,7 @@
     const target = CARDS[testSession.targetIndex];
     feedbackMask = matchMask(target, CARDS[selectedGuess]);
     renderFeedback();
-    if (feedbackMask & 1) $('#borderReveal').value = String(target.b);
+    if (feedbackMask & 1) { $('#pendulumBorderExact').checked = target.b === CARDS[selectedGuess].b; $('#pendulumBorderExact').dataset.autoExact=String(target.b===CARDS[selectedGuess].b); }
     if (feedbackMask & 8) $('#numberReveal').value = String(target.n);
     recordChallenge();
   }
@@ -1576,7 +1631,7 @@
     [...$('#simulationParallel').options].forEach((option)=>{option.disabled=Number(option.value)>hardwareCap;});
     if (Number($('#simulationParallel').value) > hardwareCap) $('#simulationParallel').value=String([8,4,2,1].find((value)=>value<=hardwareCap));
     $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次。每一步使用与实操相同的策略树。当前设备最多开放 ${hardwareCap} 路并行，推荐 4 路以平衡速度和内存。`;
-    if (simulationSnapshot) renderSimulationSnapshot(simulationSnapshot);
+    if (simulationSnapshot) { renderSimulationSnapshot(simulationSnapshot); renderSimulationWorkers(simulationSnapshot); }
     $('#runSimulationBtn').textContent = simulationRunning ? '停止后台测试' : '开始模拟';
     $('#simulationDialog').showModal();
   }
@@ -1831,7 +1886,8 @@
     const center=(p+z*z/(2*n))/(1+z*z/n),wm=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/(1+z*z/n);
     const finished=parts.length>0&&parts.every((part)=>['complete','cancelled','error'].includes(part?.type));
     const cancelled=parts.some((part)=>part?.type==='cancelled');
-    return {type:finished?(cancelled?'cancelled':'complete'):'progress',completed:results.length,total,current:parts.find((part)=>part?.current&&part.type==='progress')?.current,summary:{count:results.length,meanSolved,solvedLow:Math.max(0,meanSolved-margin),solvedHigh:Math.min(config.puzzles,meanSolved+margin),p10:percentile(solvedValues,.1),p50:percentile(solvedValues,.5),p90:percentile(solvedValues,.9),completion:p,completionLow:Math.max(0,center-wm),completionHigh:Math.min(1,center+wm),matchedItems:average('matchedItems'),hintsUsed:average('hintsUsed'),challengesUsed:average('challengesUsed'),distribution:Array.from({length:config.puzzles+1},(_,solved)=>({solved,count:results.filter((item)=>item.solved===solved).length})).filter((item)=>item.count),diagnostics,elapsed:(performance.now()-simulationStartedAt)/1000}};
+    const workers=parts.map((part,index)=>({index:index+1,status:part?.type||'ready',completed:part?.results?.length||0,current:part?.current||null}));
+    return {type:finished?(cancelled?'cancelled':'complete'):'progress',completed:results.length,total,current:parts.find((part)=>part?.current&&part.type==='progress')?.current,workers,summary:{count:results.length,meanSolved,solvedLow:Math.max(0,meanSolved-margin),solvedHigh:Math.min(config.puzzles,meanSolved+margin),p10:percentile(solvedValues,.1),p50:percentile(solvedValues,.5),p90:percentile(solvedValues,.9),completion:p,completionLow:Math.max(0,center-wm),completionHigh:Math.min(1,center+wm),matchedItems:average('matchedItems'),hintsUsed:average('hintsUsed'),challengesUsed:average('challengesUsed'),distribution:Array.from({length:config.puzzles+1},(_,solved)=>({solved,count:results.filter((item)=>item.solved===solved).length})).filter((item)=>item.count),diagnostics,elapsed:(performance.now()-simulationStartedAt)/1000}};
   }
 
   function renderSimulationSnapshot(snapshot) {
@@ -1844,6 +1900,17 @@
     $('#simulationProgress strong').textContent=type==='complete'?`已完成 ${completed}/${total}`:type==='cancelled'?`已停止，完成 ${completed}/${total}`:runningText;
     const d=summary.diagnostics,distribution=summary.distribution||[];
     $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次求解 · ${d.cacheHits} 次缓存 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
+  }
+
+  function renderSimulationWorkers(snapshot) {
+    if (snapshot.workers?.length) {
+      const cards = snapshot.workers.map((item) => {
+        const currentState = item.current;
+        const status = item.status === 'complete' ? '已完成' : item.status === 'error' ? '失败' : currentState ? `第 ${currentState.puzzle} 题 · 候选 ${currentState.candidates.toLocaleString('zh-CN')} · ${currentState.hints}提示/${currentState.challenges}挑战` : '准备中';
+        return `<article><b>并行 ${item.index}</b><span>${status}</span><small>已完成 ${item.completed} 个活动${currentState ? ` · 本轮已用 ${currentState.hintsUsed}提示/${currentState.challengesUsed}挑战` : ''}</small></article>`;
+      }).join('');
+      $('#simulationResults .simulation-live').insertAdjacentHTML('afterend', `<div class="simulation-workers">${cards}</div>`);
+    }
   }
 
   function runSimulation() {
@@ -1873,7 +1940,7 @@
       worker.onmessage=({data})=>{
         parts[index]=data;
         const combined=combinedSimulationSnapshot(parts,rounds,config);
-        simulationSnapshot=combined;renderSimulationSnapshot(combined);
+        simulationSnapshot=combined;renderSimulationSnapshot(combined);renderSimulationWorkers(combined);
         if(parts.every((part)=>part&&['complete','cancelled','error'].includes(part.type))){
           simulationRunning=false;$('#runSimulationBtn').textContent='重新开始';simulationWorkers.forEach((item)=>item.worker.terminate());simulationWorkers=[];URL.revokeObjectURL(simulationWorkerUrl);simulationWorkerUrl=null;
           const failure=parts.find((part)=>part.type==='error');if(failure)toast(`部分并行任务失败：${failure.message}`);
@@ -1931,11 +1998,12 @@
     });
     $('#candidateSearch').addEventListener('input', renderCandidates);
     $('#candidateKnownOnly').addEventListener('change', renderCandidates);
-    ['#dbBorder','#dbAttribute','#dbRace','#dbNumber','#dbAttack','#dbDefense'].forEach((id)=>$(id).addEventListener(id.startsWith('#db')&&['#dbBorder','#dbAttribute','#dbRace'].includes(id)?'change':'input',renderCandidates));
+    $('.database-filters').addEventListener('change',(event)=>{if(event.target.matches('input[type="checkbox"]')){updateFilterCounts();renderCandidates();}});
+    $('.database-filters').addEventListener('input',(event)=>{if(!event.target.matches('.filter-picker input[type="search"]'))return;const query=normalizeSearch(event.target.value);event.target.closest('.filter-picker').querySelectorAll('[data-filter-label]').forEach((label)=>{label.hidden=query&&!label.dataset.filterLabel.includes(query);});});
     $('#candidateSort').addEventListener('change', renderCandidates);
     $('#candidateTableView').addEventListener('click',()=>{$('#candidateTable').dataset.view='table';$('#candidateTableView').classList.add('is-active');$('#candidateGridView').classList.remove('is-active');renderCandidates();});
     $('#candidateGridView').addEventListener('click',()=>{$('#candidateTable').dataset.view='grid';$('#candidateGridView').classList.add('is-active');$('#candidateTableView').classList.remove('is-active');renderCandidates();});
-    $('#clearDbFilters').addEventListener('click',()=>{$('#candidateSearch').value='';['#dbBorder','#dbAttribute','#dbRace'].forEach((id)=>[...$(id).options].forEach((option)=>{option.selected=false;}));['#dbNumber','#dbAttack','#dbDefense'].forEach((id)=>{$(id).value='';});renderCandidates();});
+    $('#clearDbFilters').addEventListener('click',()=>{$('#candidateSearch').value='';$('.database-filters').querySelectorAll('input[type="checkbox"]').forEach((input)=>{input.checked=false;});$('.database-filters').querySelectorAll('input[type="search"]').forEach((input)=>{input.value='';});updateFilterCounts();renderCandidates();});
     $('#openHistoryBtn').addEventListener('click', openHistoryArchive);
     $('#historyCloseBtn').addEventListener('click', () => $('#historyDialog').close());
     $('#historyDoneBtn').addEventListener('click', () => $('#historyDialog').close());
@@ -1943,6 +2011,7 @@
     $('#importActivityBtn').addEventListener('click', () => { $('#activityImportText').value=''; $('#importDialog').showModal(); });
     $('#importCloseBtn').addEventListener('click',()=>$('#importDialog').close());
     $('#importCancelBtn').addEventListener('click',()=>$('#importDialog').close());
+    $('#activityImportFile').addEventListener('change',async(event)=>{const file=event.target.files?.[0];if(!file)return;try{$('#activityImportText').value=await file.text();toast(`已读取 ${file.name}，请点击“检查并导入”。`);}catch{toast('无法读取这个记录文件。');}});
     $('#importForm').addEventListener('submit',(event)=>{event.preventDefault();importActivity();});
     $('#clearArchiveBtn').addEventListener('click', () => {
       if (!confirm('清除当前窗口中保存的旧活动档案？当前活动记录仍会保留。')) return;
@@ -1993,6 +2062,20 @@
       render();
     });
     $('#settingsBtn').addEventListener('click', openSettings);
+    $('#activityDataBtn').addEventListener('click',()=>$('#activityDataDialog').showModal());
+    $('#activityDataCloseBtn').addEventListener('click',()=>$('#activityDataDialog').close());
+    $('#prominentExportBtn').addEventListener('click',exportActivity);
+    $('#prominentImportBtn').addEventListener('click',()=>{$('#activityDataDialog').close();$('#activityImportText').value='';$('#importDialog').showModal();});
+    $('#manualImportBtn').addEventListener('click',()=>{manualImportLines=[];$('#manualField').innerHTML=FIELDS.map((field)=>`<option value="${field.key}">${field.label}</option>`).join('');$('#manualPuzzle').max=state.config.puzzles;populateManualValue();renderManualImport();$('#manualImportDialog').showModal();});
+    $('#manualImportCloseBtn').addEventListener('click',()=>$('#manualImportDialog').close());
+    $('#manualImportCancelBtn').addEventListener('click',()=>$('#manualImportDialog').close());
+    $('#manualAction').addEventListener('change',renderManualImport);
+    $('#manualField').addEventListener('change',populateManualValue);
+    $('#manualMatchFields').addEventListener('change',updateManualChallengeSpecials);
+    $('#manualCardName').addEventListener('change',updateManualChallengeSpecials);
+    $('#manualAddBtn').addEventListener('click',addManualRecord);
+    $('#manualRecordList').addEventListener('click',(event)=>{const button=event.target.closest('[data-remove-manual]');if(!button)return;manualImportLines.splice(Number(button.dataset.removeManual),1);renderManualImport();});
+    $('#manualImportForm').addEventListener('submit',(event)=>{event.preventDefault();applyManualRecords();});
     $('#settingsCloseBtn').addEventListener('click', () => $('#settingsDialog').close());
     $('#settingsCancelBtn').addEventListener('click', () => $('#settingsDialog').close());
     $('#presetSelect').addEventListener('change', () => {
