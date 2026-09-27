@@ -101,6 +101,7 @@
   <dialog id="feedbackDialog" class="modal feedback-modal">
     <form method="dialog" class="modal-card" id="feedbackForm">
       <header><div><p class="eyebrow">真实活动录入</p><h2>本次挑战判定</h2></div><button id="feedbackCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <div id="feedbackConflict" class="feedback-conflict" role="alert" hidden>这组反馈与当前卡池矛盾，请检查录入内容。</div>
       <p class="modal-note" id="feedbackNote">只有真实活动需要这一步；测试和小游戏模式会自动生成判定。</p>
       <div class="feedback-grid" id="feedbackGrid" aria-label="挑战反馈"></div>
       <div class="special-reveals" id="specialReveals" hidden><fieldset id="borderRevealWrap" class="border-reveal-wrap" hidden><legend>游戏揭示的完整目标边框（必选）</legend><div id="borderRevealChoices" class="border-reveal-choices"></div></fieldset><label id="numberRevealWrap" hidden><span>目标显示的等级／阶级／连接</span><select id="numberReveal"></select></label></div>

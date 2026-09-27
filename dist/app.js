@@ -262,6 +262,8 @@
 
   function toast(message) {
     const element = $('#toast');
+    const openDialogs = [...document.querySelectorAll('dialog[open]')];
+    (openDialogs.at(-1) || document.body).appendChild(element);
     element.textContent = message;
     element.hidden = false;
     clearTimeout(toastTimer);
@@ -948,6 +950,7 @@
     $('#feedbackGrid').innerHTML = FIELDS.map((field) => `<button class="feedback-toggle${feedbackMask & field.bit ? ' is-on' : ''}" type="button" data-feedback-bit="${field.bit}"><span>${field.label}</span><small>${escapeHtml(formatValue(field.key, fieldValue(guess, field.key)))}</small></button>`).join('');
     const borderOn = Boolean(feedbackMask & 1);
     const numberOn = Boolean(feedbackMask & 8);
+    $('#feedbackConflict').hidden = true;
     $('#specialReveals').hidden = !(borderOn || numberOn);
     $('#borderRevealWrap').hidden = !borderOn;
     $('#numberRevealWrap').hidden = !numberOn;
@@ -1002,7 +1005,13 @@
     if ((feedbackMask & 8) && Number.isNaN(numberReveal)) { toast('请录入目标显示的等级／阶级／连接值。'); return; }
     const trial = clone(state);
     trial.logs.push({ type: 'challenge', guess: selectedGuess, mask: feedbackMask, borderReveal, numberReveal });
-    if (!candidateIndices(trial).length) { toast('这组反馈与当前卡池冲突，请检查勾选，或切换完整卡池。'); return; }
+    if (!candidateIndices(trial).length) {
+      const alert = $('#feedbackConflict');
+      alert.textContent = '这组反馈与当前卡池矛盾：请检查点亮项目、完整目标边框及等级／阶级／连接值。';
+      alert.hidden = false;
+      alert.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      return;
+    }
 
     pushUndo();
     const strictMask = feedbackMask;
