@@ -14,13 +14,14 @@
   <div class="side-wallpaper side-wallpaper-left" aria-hidden="true"><img id="wallpaperLeft" alt=""></div>
   <div class="side-wallpaper side-wallpaper-right" aria-hidden="true"><img id="wallpaperRight" alt=""></div>
   <header class="topbar">
-    <div class="brand"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><div><h1>卡片解码者</h1><p>大师决斗本地求解器</p></div></div>
+    <div class="brand-zone"><div class="brand"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><div><h1>卡片解码者</h1><p>大师决斗本地求解器</p></div></div><nav class="public-links"><button id="faqBtn" type="button"><span>?</span>常见问题</button><button id="changelogBtn" type="button"><span>↻</span>版本记录</button><a href="https://www.bilibili.com/video/BV1pPhU6XEQu" target="_blank" rel="noopener noreferrer"><span>▶</span>B站介绍视频</a></nav></div>
+    <div class="creator-notice"><strong>B站 @Gumiajer 制作 · 免费分享</strong><span>非官方研究与活动辅助工具，与科乐美无关；请勿用于商业用途。</span></div>
+    <span class="triple-icons"><img src="bilibili-triple.gif" alt="点赞、投币、收藏、分享"></span>
     <div class="top-controls"><div class="event-stats" aria-label="活动状态">
       <label>题目 <input id="puzzleNumber" type="number" min="1" max="9" value="1" aria-label="题号"><span id="puzzleTotal">/ 9</span></label>
       <label>提示 <input id="hintStock" type="number" min="0" value="3" aria-label="提示库存"></label>
       <label>挑战 <input id="challengeStock" type="number" min="0" value="4" aria-label="挑战库存"></label>
-      <label>高价值 <output id="premiumScore">0</output></label>
-      <label>后段匹配 <output id="progressScore">0</output></label>
+      <output id="premiumScore" hidden>0</output><output id="progressScore" hidden>0</output>
     </div><div class="event-actions" aria-label="工具与模式">
       <button id="settingsBtn" class="quiet-btn" type="button">活动设置</button>
       <button id="activityDataBtn" class="quiet-btn archive-btn" type="button">导入／导出活动</button>
@@ -49,7 +50,7 @@
         </div>
         <div class="tab-pane" id="challengePane" hidden>
           <div class="search-block"><label class="grow"><span>本次挑战卡</span><input id="cardSearch" type="search" autocomplete="off" placeholder="输入中文或英文卡名"></label><div class="search-results" id="searchResults" hidden></div></div>
-          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div><div class="selected-card-facts" id="selectedCardFacts"></div><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button></div></div>
+          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><div><button id="copySelectedCard" class="quiet-btn" type="button">复制卡名</button><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div></div><div class="selected-card-facts" id="selectedCardFacts"></div><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button></div></div>
           <p class="form-help challenge-help" id="challengeHelp">选择卡片后执行挑战；测试和小游戏模式会直接生成判定。</p>
         </div>
       </div>
@@ -58,7 +59,7 @@
     <aside class="panel recommendation-panel">
       <div class="section-heading compact"><div><p class="eyebrow">下一步</p><h2>推荐行动</h2></div><select id="recommendMode" class="mode-select" aria-label="推荐模式"><option value="balanced">★ 严格决策</option><option value="points">即时奖励</option><option value="solve">直接通关率</option><option value="info">反馈信息量</option></select></div>
       <p class="mode-guide" id="modeGuide">统一比较提示与挑战；精确时给出证明，超出规模时显示严格上下界。</p>
-      <div class="recommendation-card empty-state" id="recommendationCard"><div class="scan-orbit" aria-hidden="true"><i></i><i></i><i></i><span>6</span></div><img id="recommendImage" class="recommend-image" alt="" hidden><button id="recommendTitle" class="recommend-title" type="button" disabled>录入初始揭示</button><p id="recommendReason">加入本题已经显示的字段，求解器会筛选候选并计算推荐挑战。</p><div class="recommend-card-stats" id="recommendCardStats" hidden></div></div>
+      <div class="recommendation-card empty-state" id="recommendationCard"><div class="scan-orbit" aria-hidden="true"><i></i><i></i><i></i><span>6</span></div><img id="recommendImage" class="recommend-image" alt="" hidden><div class="recommend-heading"><button id="recommendTitle" class="recommend-title" type="button" disabled>录入初始揭示</button><button id="copyRecommendCard" class="quiet-btn" type="button" hidden>复制卡名</button></div><p id="recommendReason">加入本题已经显示的字段，求解器会筛选候选并计算推荐挑战。</p><div class="recommend-card-stats" id="recommendCardStats" hidden></div></div>
       <div class="metric-grid"><div><span>期望即时得分</span><strong id="metricPoints">—</strong></div><div><span>本次通关概率</span><strong id="metricSolve">—</strong></div><div><span>信息增益</span><strong id="metricInfo">—</strong></div></div>
       <button class="calculate-btn" id="calculateBtn" type="button">计算最佳挑战</button>
       <div class="calc-progress" id="calcProgress" hidden><span></span><em>正在比较合法挑战…</em></div><div class="alternatives" id="alternatives"></div>
@@ -120,6 +121,26 @@
   <dialog id="activityDataDialog" class="modal">
     <div class="modal-card compact-modal"><header><div><p class="eyebrow">活动存档</p><h2>导入／导出活动</h2></div><button id="activityDataCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header><div class="archive-actions"><button id="prominentExportBtn" class="primary-btn" type="button">导出当前活动</button><button id="prominentImportBtn" class="quiet-btn" type="button">导入 JSON／文本记录</button><button id="manualImportBtn" class="quiet-btn" type="button">逐项补录行动</button></div><p class="modal-note">浏览器通常会自动保存本机进度；这里用于换设备、换浏览器，或根据游戏画面重新补录。</p></div>
   </dialog>
+  <dialog id="groupDialog" class="modal"><div class="modal-card"><header><div><p class="eyebrow">六项完全相同</p><h2 id="groupDialogTitle">同组卡片</h2></div><button id="groupDialogClose" class="icon-btn" type="button">×</button></header><p id="groupDialogSummary" class="modal-note"></p><div id="groupDialogList" class="group-card-list"></div><footer><button id="groupDialogDone" class="primary-btn" type="button">完成</button></footer></div></dialog>
+  <dialog id="faqDialog" class="modal">
+    <div class="modal-card info-card">
+      <header><div><p class="eyebrow">使用与判定说明</p><h2>常见问题及解答</h2></div><button id="faqCloseBtn" class="icon-btn" type="button">×</button></header>
+      <div class="faq-list">
+        <details open><summary>为什么会推荐不符合已知条件的卡？</summary><p>挑战卡不必是候选答案。某张非候选卡的六项组合可能更适合把剩余候选分开，从而提高后续通关概率。</p></details>
+        <details><summary>候选已经很少，为什么还会推荐提示？</summary><p>求解器会同时考虑提示和挑战的剩余数量、后续分支及资源价值。提示有时能避免高风险挑战，并为后面的题保留更多挑战次数。</p></details>
+        <details><summary>只剩一个候选，为什么推荐的挑战卡不是它？</summary><p>先检查该候选是否属于多张卡共享六项信息的判定组，以及推荐区域是否显示“任选同组卡”。若都不是，可能是数据误差，欢迎反馈具体卡名和操作记录。</p></details>
+        <details><summary>为什么多张卡会被归为同一个候选？</summary><p>活动只比较边框、属性、种族、等级／阶级／连接、攻击力和守备力。六项完全相同的卡属于同一判定组，游戏规则允许挑战其中任意一张通关。</p></details>
+        <details><summary>为什么六项都点亮仍然没有通关？</summary><p>点亮代表本次挑战揭示了相应信息，不一定表示完整字段严格相同。尤其灵摆卡可能因命中组成边框而点亮“边框”，但效果与效果／灵摆仍是不同的完整边框。</p></details>
+        <details><summary>灵摆卡的边框应该怎样录入？</summary><p>录入游戏最终揭示的完整边框，例如效果／灵摆、融合／灵摆、超量／灵摆或仪式／灵摆。挑战反馈无法确定完整边框时，只勾选游戏明确判定相符的项目。</p></details>
+        <details><summary>为什么工具候选数量可能与游戏不同？</summary><p>科乐美没有公开本活动的完整抽题名单。工具已尽量贴合大师决斗卡池，但活动可能额外排除少量特殊卡，因此仍可能存在极小误差。</p></details>
+        <details><summary>四种计算模式应该选哪个？</summary><p>一般保持“综合期望”即可；“本次得分”偏重眼前相符项，“通关概率”更重视当前题完成机会，“信息量”用于观察一次行动区分候选的能力。</p></details>
+        <details><summary>为什么规模测试较慢，并行数越高却没有等比例加速？</summary><p>规模测试会反复调用与实操相同的策略计算。并行任务会争用处理器、内存和缓存，因此能加速但通常达不到理想倍数；机器负载较高时请选择较低并行数。</p></details>
+        <details><summary>活动记录或谜题数据会上传吗？</summary><p>求解、筛选、导入导出和规模测试均在本机完成。除浏览器托管平台自身可能提供的基础访问统计外，工具不会上传你的具体谜题操作。</p></details>
+      </div>
+      <footer><button id="faqDoneBtn" class="primary-btn" type="button">完成</button></footer>
+    </div>
+  </dialog>
+  <dialog id="changelogDialog" class="modal"><div class="modal-card info-card"><header><div><p class="eyebrow">项目沿革</p><h2>原始版本与更新记录</h2></div><button id="changelogCloseBtn" class="icon-btn" type="button">×</button></header><section class="origin-note"><h3>原始版本 · 2026-09-24</h3><p>从活动规则出发，将提示和挑战抽象为有限资源决策问题，并逐步加入数据库、测试与规模模拟。</p></section><div class="changelog-list"><article><time>2026-09-27</time><div><h3>灵摆判定与交互完善</h3><p>拆分相符项与整卡通关，修复行动剪枝、提示显示和活动记录。</p></div></article><article><time>2026-09-25</time><div><h3>模型与测试升级</h3><p>统一比较提示与挑战，加入有限层级求解和并行规模测试。</p></div></article></div><footer><button id="changelogDoneBtn" class="primary-btn" type="button">完成</button></footer></div></dialog>
   <dialog id="manualImportDialog" class="modal">
     <form method="dialog" class="modal-card" id="manualImportForm"><header><div><p class="eyebrow">逐项询问</p><h2>补录活动行动</h2></div><button id="manualImportCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header><div class="settings-grid compact-grid"><label><span>题号</span><input id="manualPuzzle" type="number" min="1" value="1"></label><label><span>行动</span><select id="manualAction"><option value="初始">初始揭示</option><option value="提示">提示</option><option value="挑战">挑战</option></select></label></div><div id="manualRevealFields" class="settings-grid compact-grid"><label><span>字段</span><select id="manualField"></select></label><label><span>结果</span><select id="manualValue"></select></label></div><div id="manualChallengeFields" hidden><label class="wide"><span>挑战卡名</span><input id="manualCardName" type="search" placeholder="输入完整中文或英文卡名"></label><div id="manualMatchFields" class="manual-match-grid"></div><label id="manualPendulumExactWrap" class="pendulum-check" hidden><input id="manualPendulumExact" type="checkbox" checked><span><b>边框严格相符</b><small>挑战卡含灵摆时，根据游戏最终判定选择。</small></span></label><label id="manualNumberWrap" hidden><span>游戏显示的等级／阶级／连接</span><input id="manualNumberValue" type="number" min="0" max="13"></label></div><div class="manual-records"><div class="subheading"><h3>已补录</h3><span id="manualRecordCount">0 条</span></div><div id="manualRecordList" class="history-list"><div class="empty-inline">尚未添加行动。</div></div></div><footer><button id="manualImportCancelBtn" class="quiet-btn" type="button">取消</button><button id="manualAddBtn" class="quiet-btn" type="button">添加并继续</button><button class="primary-btn" type="submit">应用全部记录</button></footer></form>
   </dialog>

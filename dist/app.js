@@ -146,6 +146,15 @@
     sessionStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(session.slice(-500)));
   }
 
+  function syncCurrentActivityHistory() {
+    const unrelated = readSessionHistory().filter((item) => item.activityId !== state.activityId);
+    sessionStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify([...unrelated, ...(state.activityHistory || [])].slice(-500)));
+  }
+
+  function removeActivityFromSession(activityId) {
+    sessionStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(readSessionHistory().filter((item) => item.activityId !== activityId)));
+  }
+
   function clampInt(value, min, max, fallback) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
@@ -310,6 +319,21 @@
     return `${formatBorder(card.b)} · ${DATA.labels.attribute[card.a] || card.a} · ${DATA.labels.race[card.r] || card.r} · ${card.n} · ${formatStat(card.atk)}／${formatStat(card.def)}`;
   }
 
+  async function copyCardName(card) {
+    if (!card) return;
+    try { await navigator.clipboard.writeText(card.name); toast(`已复制卡名：${card.name}`); }
+    catch { toast('复制失败，请手动选择卡名。'); }
+  }
+
+  function openGroupDialog(index) {
+    const card = CARDS[Number(index)];
+    if (!card) return;
+    $('#groupDialogTitle').textContent = card.name;
+    $('#groupDialogSummary').textContent = `该判定组包含 ${weightOf(card).toLocaleString('zh-CN')} 张记录；六项判定完全相同，选择其中任意一张均算正确。`;
+    $('#groupDialogList').innerHTML = card.names.map((name) => `<div class="group-card-entry"><span>${escapeHtml(name)}</span><button type="button" data-copy-group-name="${escapeAttr(name)}">复制</button></div>`).join('');
+    $('#groupDialog').showModal();
+  }
+
   function matchMask(target, guess) {
     let mask = 0;
     if ((target.b & 128) ? Boolean(target.b & guess.b & 127) : target.b === guess.b) mask |= 1;
@@ -445,7 +469,8 @@
   }
 
   function renderFields() {
-    $('#fieldGrid').innerHTML = FIELDS.map((field) => {
+    const displayOrder = ['border', 'attribute', 'number', 'race', 'attack', 'defense'];
+    $('#fieldGrid').innerHTML = displayOrder.map((key) => FIELDS.find((field) => field.key === key)).map((field) => {
       const known = state.known[field.key];
       const matched = Boolean(state.matchedMask & field.bit);
       return `<article class="field-card${known ? ' is-known' : ''}${matched ? ' is-matched' : ''}" data-field="${field.key}">
@@ -834,6 +859,8 @@
     $('#recommendTitle').textContent = state.known && Object.keys(state.known).length ? '等待计算' : '录入初始揭示';
     $('#recommendTitle').disabled = true;
     $('#recommendTitle').dataset.cardIndex = '';
+    $('#copyRecommendCard').hidden = true;
+    $('#copyRecommendCard').dataset.cardIndex = '';
     $('#recommendImage').hidden = true;
     $('#recommendReason').textContent = state.known && Object.keys(state.known).length ? '点击下方按钮，比较当前卡池中的合法挑战。' : '加入本题已经显示的字段，求解器会筛选候选并计算推荐挑战。';
     $('#recommendCardStats').hidden = true;
@@ -927,6 +954,7 @@
     $('#searchResults').hidden = true;
     $('#selectedCard').hidden = false;
     $('#selectedCardName').textContent = card.name;
+    $('#copySelectedCard').dataset.cardIndex = String(selectedGuess);
     $('#selectedCardFacts').innerHTML = FIELDS.map((field) => `<div><span>${escapeHtml(field.label)}</span><strong>${escapeHtml(formatValue(field.key, fieldValue(card, field.key)))}</strong></div>`).join('');
     setCardImage($('#selectedCardImage'), card);
     renderTestMode();
@@ -1392,6 +1420,8 @@
     $('#recommendTitle').textContent = recommendHint ? '先使用1次提示' : chooseAny ? `以下 ${equivalentChoices.length} 张任选其一` : card.name;
     $('#recommendTitle').disabled = recommendHint || chooseAny;
     $('#recommendTitle').dataset.cardIndex = recommendHint || chooseAny ? '' : String(best.index);
+    $('#copyRecommendCard').hidden = recommendHint || chooseAny;
+    $('#copyRecommendCard').dataset.cardIndex = recommendHint || chooseAny ? '' : String(best.index);
     if (chooseAny) { const image=$('#recommendImage'); image.hidden=false; image.src='card-back.png'; image.dataset.zoomable='false'; }
     else setCardImage($('#recommendImage'), card, !recommendHint);
     $('#recommendReason').textContent = chooseAny
@@ -1980,6 +2010,7 @@
       if (button) selectGuess(Number(button.dataset.cardIndex));
     });
     $('#clearSelectedCard').addEventListener('click', clearGuess);
+    $('#copySelectedCard').addEventListener('click', () => copyCardName(CARDS[Number($('#copySelectedCard').dataset.cardIndex)]));
     $('#feedbackGrid').addEventListener('click', (event) => {
       const button = event.target.closest('[data-feedback-bit]');
       if (!button) return;
@@ -2000,6 +2031,17 @@
       if (!Number.isInteger(index)) return;
       switchTab('challenge'); selectGuess(index); window.scrollTo({ top: 0, behavior: 'smooth' });
     });
+    $('#copyRecommendCard').addEventListener('click', () => copyCardName(CARDS[Number($('#copyRecommendCard').dataset.cardIndex)]));
+    $('#candidateTable').addEventListener('click', (event) => { const button=event.target.closest('[data-group-index]'); if(button)openGroupDialog(button.dataset.groupIndex); });
+    $('#groupDialogClose').addEventListener('click',()=>$('#groupDialog').close());
+    $('#groupDialogDone').addEventListener('click',()=>$('#groupDialog').close());
+    $('#groupDialogList').addEventListener('click',(event)=>{const button=event.target.closest('[data-copy-group-name]');if(!button)return;navigator.clipboard.writeText(button.dataset.copyGroupName).then(()=>toast(`已复制卡名：${button.dataset.copyGroupName}`)).catch(()=>toast('复制失败。'));});
+    $('#faqBtn').addEventListener('click',()=>$('#faqDialog').showModal());
+    $('#faqCloseBtn').addEventListener('click',()=>$('#faqDialog').close());
+    $('#faqDoneBtn').addEventListener('click',()=>$('#faqDialog').close());
+    $('#changelogBtn').addEventListener('click',()=>$('#changelogDialog').showModal());
+    $('#changelogCloseBtn').addEventListener('click',()=>$('#changelogDialog').close());
+    $('#changelogDoneBtn').addEventListener('click',()=>$('#changelogDialog').close());
     $('#alternatives').addEventListener('click', (event) => {
       const button = event.target.closest('[data-recommend-index]');
       if (!button) return;
@@ -2055,7 +2097,7 @@
     });
     $('#undoBtn').addEventListener('click', () => {
       if (!undoStack.length) return;
-      state = undoStack.pop(); render(); toast('已撤销上一步。');
+      state = undoStack.pop(); syncCurrentActivityHistory(); render(); toast('已撤销上一步。');
     });
     $('#resetPuzzleBtn').addEventListener('click', () => {
       if (!confirm('重置本题会移除本题线索、挑战记录和本题得分，是否继续？')) return;
@@ -2063,13 +2105,16 @@
       state.totalScore = Math.max(0, state.totalScore - state.puzzleScore);
       if (isPremiumPuzzle()) state.premiumScore = Math.max(0, state.premiumScore - state.puzzleScore);
       else state.progressScore = Math.max(0, state.progressScore - state.puzzleScore);
+      state.activityHistory = (state.activityHistory || []).filter((item) => item.puzzle !== state.puzzle || item.activityId !== state.activityId);
       resetPuzzle(false);
+      syncCurrentActivityHistory();
       if (testSession) seedTestInitialReveal();
       render();
     });
     $('#resetEventBtn').addEventListener('click', () => {
       if (!confirm(`确定清除整个 ${state.config.puzzles} 题活动的本地记录吗？`)) return;
       pushUndo();
+      removeActivityFromSession(state.activityId);
       const presetId = state.presetId;
       state = freshState(state.config);
       state.presetId = presetId;
