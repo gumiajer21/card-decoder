@@ -103,7 +103,7 @@
       <header><div><p class="eyebrow">真实活动录入</p><h2>本次挑战判定</h2></div><button id="feedbackCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
       <p class="modal-note" id="feedbackNote">只有真实活动需要这一步；测试和小游戏模式会自动生成判定。</p>
       <div class="feedback-grid" id="feedbackGrid" aria-label="挑战反馈"></div>
-      <div class="special-reveals" id="specialReveals" hidden><label id="pendulumExactWrap" class="pendulum-check" hidden><input id="pendulumBorderExact" type="checkbox" checked><span><b>边框也猜中了</b><small>请看游戏最终判定；若边框显示不相符，就取消勾选，表示目标不含灵摆。</small></span></label><label id="numberRevealWrap" hidden><span>目标显示的等级／阶级／连接</span><select id="numberReveal"></select></label></div>
+      <div class="special-reveals" id="specialReveals" hidden><fieldset id="borderRevealWrap" class="border-reveal-wrap" hidden><legend>游戏揭示的完整目标边框（必选）</legend><div id="borderRevealChoices" class="border-reveal-choices"></div></fieldset><label id="numberRevealWrap" hidden><span>目标显示的等级／阶级／连接</span><select id="numberReveal"></select></label></div>
       <footer><button id="feedbackCancelBtn" class="quiet-btn" type="button">取消</button><button class="primary-btn" id="confirmFeedbackBtn" type="submit">保存判定并扣除挑战</button></footer>
     </form>
   </dialog>

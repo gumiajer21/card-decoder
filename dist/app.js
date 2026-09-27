@@ -76,6 +76,7 @@
   let candidateCache = [];
   let selectedGuess = null;
   let feedbackMask = 0;
+  let borderRevealValue = null;
   let lastRecommendations = [];
   let lastAdvice = null;
   let lastProof = null;
@@ -309,7 +310,7 @@
 
   function matchMask(target, guess) {
     let mask = 0;
-    if (target.b & guess.b) mask |= 1;
+    if ((target.b & 128) ? Boolean(target.b & guess.b & 127) : target.b === guess.b) mask |= 1;
     if (target.a === guess.a) mask |= 2;
     if (target.r === guess.r) mask |= 4;
     if (target.nm & guess.nm) mask |= 8;
@@ -319,9 +320,11 @@
   }
 
   function strictMatchMask(target, guess) {
-    let mask = matchMask(target, guess);
-    if (target.b !== guess.b) mask &= ~1;
-    return mask;
+    return matchMask(target, guess);
+  }
+
+  function isExactAnswer(target, guess) {
+    return matchMask(target, guess) === 63 && target.b === guess.b;
   }
 
   function migrateChallengeSemantics() {
@@ -917,8 +920,6 @@
   function selectGuess(index) {
     selectedGuess = Number(index);
     feedbackMask = 0;
-    $('#pendulumBorderExact').checked = true;
-    delete $('#pendulumBorderExact').dataset.autoExact;
     const card = CARDS[selectedGuess];
     $('#cardSearch').value = card.name;
     $('#searchResults').hidden = true;
@@ -932,6 +933,7 @@
   function clearGuess() {
     selectedGuess = null;
     feedbackMask = 0;
+    borderRevealValue = null;
     $('#cardSearch').value = '';
     $('#selectedCard').hidden = true;
     $('#selectedCardImage').hidden = true;
@@ -947,11 +949,18 @@
     const borderOn = Boolean(feedbackMask & 1);
     const numberOn = Boolean(feedbackMask & 8);
     $('#specialReveals').hidden = !(borderOn || numberOn);
-    $('#pendulumExactWrap').hidden = !borderOn || !(guess.b & 128);
+    $('#borderRevealWrap').hidden = !borderOn;
     $('#numberRevealWrap').hidden = !numberOn;
-    if (borderOn && guess.b & 128) $('#feedbackNote').textContent = '这张挑战卡含灵摆。边框点亮后，请额外确认游戏是否把“边框”计为严格相符。';
+    if (borderOn) { populateBorderRevealChoices(); $('#feedbackNote').textContent = '请选择游戏画面实际揭示的完整目标边框。'; }
     else $('#feedbackNote').textContent = '勾选游戏中亮起的项目；测试和小游戏模式会自动生成判定。';
     if (numberOn) populateSpecialReveal('number');
+  }
+
+  function populateBorderRevealChoices() {
+    const guess = CARDS[selectedGuess];
+    const values = [...new Set(CARDS.filter((card) => weightOf(card) > 0 && (matchMask(card, guess) & 1)).map((card) => card.b))].sort((a,b)=>a-b);
+    if (!values.includes(borderRevealValue)) borderRevealValue = null;
+    $('#borderRevealChoices').innerHTML = values.map((value) => `<button class="border-choice${value === borderRevealValue ? ' is-on' : ''}" type="button" data-border-reveal="${value}">${escapeHtml(formatBorder(value))}</button>`).join('');
   }
 
   function populateSpecialReveal(field) {
@@ -977,6 +986,7 @@
     if (state.challenges <= 0) { toast('挑战库存不足。'); return; }
     if (testSession) { autoJudgeChallenge(); return; }
     feedbackMask = 0;
+    borderRevealValue = null;
     renderFeedback();
     $('#feedbackDialog').showModal();
   }
@@ -986,10 +996,8 @@
     if (state.challenges <= 0) { toast('挑战库存不足。'); return; }
     if (state.logs.some((log) => log.type === 'challenge' && log.guess === selectedGuess)) { toast('同题重复挑战这张卡不会扣次数，也不会留下记录。'); return; }
     const guess = CARDS[selectedGuess];
-    const automaticExact=$('#pendulumBorderExact').dataset.autoExact;
-    const borderExact = automaticExact !== undefined ? automaticExact === 'true' : (!(feedbackMask & 1) || !(guess.b & 128) || $('#pendulumBorderExact').checked);
-    delete $('#pendulumBorderExact').dataset.autoExact;
-    const borderReveal = feedbackMask & 1 ? (borderExact ? guess.b : (guess.b ^ 128)) : null;
+    const borderReveal = feedbackMask & 1 ? borderRevealValue : null;
+    if ((feedbackMask & 1) && borderReveal == null) { toast('请选择游戏揭示的完整目标边框。'); return; }
     const numberReveal = feedbackMask & 8 ? Number($('#numberReveal').value) : null;
     if ((feedbackMask & 8) && Number.isNaN(numberReveal)) { toast('请录入目标显示的等级／阶级／连接值。'); return; }
     const trial = clone(state);
@@ -997,10 +1005,10 @@
     if (!candidateIndices(trial).length) { toast('这组反馈与当前卡池冲突，请检查勾选，或切换完整卡池。'); return; }
 
     pushUndo();
-    const strictMask = feedbackMask & 1 && CARDS[selectedGuess].b !== borderReveal ? feedbackMask & ~1 : feedbackMask;
+    const strictMask = feedbackMask;
     const newMask = state.matchedMask | strictMask;
     let delta = thresholdGain(state.matchedMask, newMask);
-    const solvedNow = strictMask === 63;
+    const solvedNow = strictMask === 63 && borderReveal === guess.b;
     if (solvedNow) delta += solveReward();
     state.matchedMask = newMask;
     state.challenges -= 1;
@@ -1058,7 +1066,7 @@
         const strictMask = strictMatchMask(target, guess);
         const newMask = oldMask | strictMask;
         let gain = thresholdGain(oldMask, newMask);
-        if (strictMask === 63) { gain += solveReward(); solveMass += weight; }
+        if (isExactAnswer(target, guess)) { gain += solveReward(); solveMass += weight; }
         immediateSum += gain * weight;
         newMatchesSum += (popcount(newMask) - oldCount) * weight;
         if (mask & 1) bitMass[0] += weight;
@@ -1242,7 +1250,7 @@
       const signature = candidates.map((targetIndex) => {
         const target = CARDS[targetIndex];
         const mask = matchMask(target, guess);
-        return `${mask}:${strictMatchMask(target, guess)}:${mask & 1 ? target.b : ''}:${mask & 8 ? target.n : ''}`;
+        return `${mask}:${strictMatchMask(target, guess)}:${isExactAnswer(target, guess) ? 1 : 0}:${mask & 1 ? target.b : ''}:${mask & 8 ? target.n : ''}`;
       }).join('|');
       if (!signatures.has(signature)) signatures.set(signature, guessIndex);
     }
@@ -1619,7 +1627,7 @@
     const target = CARDS[testSession.targetIndex];
     feedbackMask = matchMask(target, CARDS[selectedGuess]);
     renderFeedback();
-    if (feedbackMask & 1) { $('#pendulumBorderExact').checked = target.b === CARDS[selectedGuess].b; $('#pendulumBorderExact').dataset.autoExact=String(target.b===CARDS[selectedGuess].b); }
+    if (feedbackMask & 1) { borderRevealValue = target.b; renderFeedback(); }
     if (feedbackMask & 8) $('#numberReveal').value = String(target.n);
     recordChallenge();
   }
@@ -1761,7 +1769,7 @@
       const bitMass = [0,0,0,0,0,0];
       for (const targetIndex of candidates) {
         const target = CARDS[targetIndex], weight = simulationWeight(target, pool), mask = matchMask(target, guess), strictMask = strictMatchMask(target, guess);
-        if (strictMask === 63) solveMass += weight;
+        if (isExactAnswer(target, guess)) solveMass += weight;
         newMatches += (popcount(matchedMask | strictMask) - oldCount) * weight;
         for (let bit = 0; bit < 6; bit += 1) if (mask & (1 << bit)) bitMass[bit] += weight;
       }
@@ -1776,7 +1784,7 @@
       const signatures = new Map();
       for (const action of universe) {
         if (guessed.has(action)) continue;
-        const signature = candidates.map((targetIndex) => { const target=CARDS[targetIndex],guess=CARDS[action],mask=matchMask(target,guess); return `${mask}:${strictMatchMask(target,guess)}:${mask&1?target.b:''}:${mask&8?target.n:''}`; }).join('|');
+        const signature = candidates.map((targetIndex) => { const target=CARDS[targetIndex],guess=CARDS[action],mask=matchMask(target,guess); return `${mask}:${strictMatchMask(target,guess)}:${isExactAnswer(target,guess)?1:0}:${mask&1?target.b:''}:${mask&8?target.n:''}`; }).join('|');
         if (!signatures.has(signature)) signatures.set(signature, action);
       }
       try {
@@ -1857,7 +1865,7 @@
         for (const field of FIELDS) if (mask & field.bit) known.add(field.key);
         challenges -= 1;
         challengesUsed += 1;
-        if (strictMask === 63) {
+        if (isExactAnswer(target, guess)) {
           const bonus = solveReward(config, puzzle);
           if (isPremiumPuzzle(puzzle, config)) premiumScore += bonus; else progressScore += bonus;
           solved += 1; puzzleSolved = true; break;
@@ -1966,9 +1974,12 @@
     $('#feedbackGrid').addEventListener('click', (event) => {
       const button = event.target.closest('[data-feedback-bit]');
       if (!button) return;
-      feedbackMask ^= Number(button.dataset.feedbackBit);
+      const bit = Number(button.dataset.feedbackBit);
+      feedbackMask ^= bit;
+      if (bit === 1) borderRevealValue = null;
       renderFeedback();
     });
+    $('#borderRevealChoices').addEventListener('click', (event) => { const button=event.target.closest('[data-border-reveal]'); if(!button)return; borderRevealValue=Number(button.dataset.borderReveal); populateBorderRevealChoices(); });
     $('#recordChallengeBtn').addEventListener('click', beginChallenge);
     $('#feedbackForm').addEventListener('submit', (event) => { event.preventDefault(); recordChallenge(); });
     $('#feedbackCloseBtn').addEventListener('click', () => $('#feedbackDialog').close());

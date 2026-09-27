@@ -1,14 +1,16 @@
 const assert = require('node:assert/strict');
 
 require('../dist/solver-core.js');
-const { matchMask, strictMatchMask, solveExact } = globalThis.DecoderSolver;
+const { matchMask, strictMatchMask, isExactAnswer, solveExact } = globalThis.DecoderSolver;
 
 const effect = { b: 2, a: 1, r: 1, n: 4, nm: 1 << 4, atk: 1000, def: 1000 };
 const effectPendulum = { ...effect, b: 2 | 128 };
 
-assert.equal(matchMask(effect, effectPendulum), 63, '复合边框有交集时，游戏应点亮边框字段');
-assert.equal(strictMatchMask(effect, effectPendulum), 62, '完整边框不同，不应计为严格边框相符');
-assert.equal(strictMatchMask(effectPendulum, effectPendulum), 63, '完整边框一致时应六项严格相符');
+assert.equal(matchMask(effectPendulum, effect), 63, '目标为灵摆卡时，命中组成边框应点亮边框字段');
+assert.equal(matchMask(effect, effectPendulum), 62, '目标为非灵摆卡时，组合边框不应反向匹配');
+assert.equal(strictMatchMask(effectPendulum, effect), 63, '六项点亮应保留六项相符收益');
+assert.equal(isExactAnswer(effectPendulum, effect), false, '完整边框不同不能判定通关');
+assert.equal(isExactAnswer(effectPendulum, effectPendulum), true, '完整边框一致时应判定通关');
 
 const result = solveExact({
   cards: [effect, effectPendulum],
@@ -19,11 +21,11 @@ const result = solveExact({
   puzzle: 1,
   hints: 0,
   challenges: 1,
-  candidates: [0, 1],
+  candidates: [1],
   knownMask: 0,
   matchedMask: 0,
   guessed: [],
 });
 
-assert.equal(result.value[0], 0.5, '猜效果/灵摆不能把效果非灵摆错误判为全中');
+assert.equal(result.action.index, 1, '已知灵摆目标时应选择能真正通关的完整边框行动');
 console.log('solver-core tests passed');

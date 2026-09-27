@@ -30,7 +30,7 @@
 
   function matchMask(target, guess) {
     let mask = 0;
-    if (target.b & guess.b) mask |= 1;
+    if ((target.b & 128) ? Boolean(target.b & guess.b & 127) : target.b === guess.b) mask |= 1;
     if (target.a === guess.a) mask |= 2;
     if (target.r === guess.r) mask |= 4;
     if (target.nm & guess.nm) mask |= 8;
@@ -40,9 +40,11 @@
   }
 
   function strictMatchMask(target, guess) {
-    let mask = matchMask(target, guess);
-    if (target.b !== guess.b) mask &= ~1;
-    return mask;
+    return matchMask(target, guess);
+  }
+
+  function isExactAnswer(target, guess) {
+    return matchMask(target, guess) === 63 && target.b === guess.b;
   }
 
   function thresholdGain(config, puzzle, beforeMask, afterMask) {
@@ -136,14 +138,15 @@
           const target = cards[targetIndex];
           const match = matchMask(target, cards[guessIndex]);
           const strict = strictMatchMask(target, cards[guessIndex]);
-          const keyPart = `${match}|${strict}|${match & 1 ? target.b : ''}|${match & 8 ? target.n : ''}`;
-          if (!outcomes.has(keyPart)) outcomes.set(keyPart, { match, strict, targets: [] });
+          const solved = isExactAnswer(target, cards[guessIndex]);
+          const keyPart = `${match}|${strict}|${solved ? 1 : 0}|${match & 1 ? target.b : ''}|${match & 8 ? target.n : ''}`;
+          if (!outcomes.has(keyPart)) outcomes.set(keyPart, { match, strict, solved, targets: [] });
           outcomes.get(keyPart).targets.push(targetIndex);
         }
         let actionValue = [...ZERO];
         for (const outcome of outcomes.values()) {
           const probability = mass(outcome.targets) / total;
-          const solved = outcome.strict === 63;
+          const solved = outcome.solved;
           let branch = rewardVector(config, state.puzzle, state.matchedMask, outcome.strict, solved);
           if (solved) {
             branch = add(branch, initialValue(state.puzzle + 1, state.hints, state.challenges - 1).value);
@@ -233,10 +236,10 @@
       if (state.challenges > 0) for (const guessIndex of actions) {
         if(state.guessed.has(guessIndex))continue;
         const outcomes=new Map();
-        for(const targetIndex of state.candidates){const match=matchMask(cards[targetIndex],cards[guessIndex]),strict=strictMatchMask(cards[targetIndex],cards[guessIndex]);const k=`${match}|${strict}|${match&1?cards[targetIndex].b:''}|${match&8?cards[targetIndex].n:''}`;if(!outcomes.has(k))outcomes.set(k,{match,strict,targets:[]});outcomes.get(k).targets.push(targetIndex);}
+        for(const targetIndex of state.candidates){const target=cards[targetIndex],guess=cards[guessIndex],match=matchMask(target,guess),strict=strictMatchMask(target,guess),solved=isExactAnswer(target,guess);const k=`${match}|${strict}|${solved?1:0}|${match&1?target.b:''}|${match&8?target.n:''}`;if(!outcomes.has(k))outcomes.set(k,{match,strict,solved,targets:[]});outcomes.get(k).targets.push(targetIndex);}
         let value=[...ZERO];
         for(const outcome of outcomes.values()){
-          const p=mass(outcome.targets)/total,solved=outcome.strict===63;
+          const p=mass(outcome.targets)/total,solved=outcome.solved;
           let branch=rewardVector({},0,state.matchedMask,outcome.strict,solved);
           if(solved) branch=add(branch,continuationValue(state.hints,state.challenges-1));
           else {const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.strict,guessed},depth-1).value);}
@@ -250,5 +253,5 @@
     return {...result,expandedStates,memoStates:memo.size,depth:maxDepth,method:'restricted-horizon'};
   }
 
-  root.DecoderSolver = { FIELDS, add, scale, compare, maxVector, matchMask, strictMatchMask, solveExact, solveRestrictedHorizon, stateUpperBound };
+  root.DecoderSolver = { FIELDS, add, scale, compare, maxVector, matchMask, strictMatchMask, isExactAnswer, solveExact, solveRestrictedHorizon, stateUpperBound };
 })(typeof window !== 'undefined' ? window : globalThis);
