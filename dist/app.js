@@ -88,6 +88,13 @@
   let comparisonIndices = [];
   let comparisonStrategyResults = new Map();
   let comparisonCalculationToken = 0;
+  let strategyExperimentWorker = null;
+  let strategyExperimentRows = [
+    { name:'基准', depth:3, budget:24000 },
+    { name:'增强', depth:3, budget:80000 },
+    { name:'深度4', depth:4, budget:200000 },
+    { name:'深度5', depth:5, budget:500000 },
+  ];
   let simulationRunning = false;
   let simulationWorkers = [];
   let simulationWorkerUrl = null;
@@ -1170,6 +1177,77 @@
     const results = searchCards(query);
     container.hidden = false;
     container.innerHTML = results.length ? results.map((index) => `<button class="search-result" type="button" data-compare-card-index="${index}"><span><strong>${escapeHtml(CARDS[index].name)}</strong><small>${escapeHtml(cardStats(CARDS[index]))}</small></span><small>${comparisonIndices.includes(index) ? '已加入' : '加入'}</small></button>`).join('') : '<div class="empty-inline">没有找到卡名</div>';
+  }
+
+  function renderExperimentGroups() {
+    $('#experimentGroups').innerHTML = strategyExperimentRows.map((row,index) => `<div class="experiment-group"><input data-experiment-name="${index}" type="text" value="${escapeAttr(row.name)}" aria-label="组名"><label><span>深度</span><input data-experiment-depth="${index}" type="number" min="1" max="8" value="${row.depth}"></label><label><span>状态预算</span><input data-experiment-budget="${index}" type="number" min="1000" max="2000000" step="1000" value="${row.budget}"></label><button data-remove-experiment="${index}" class="icon-btn" type="button" aria-label="删除">×</button></div>`).join('');
+  }
+
+  function readExperimentGroups() {
+    return strategyExperimentRows.map((row,index) => ({
+      name: $(`[data-experiment-name="${index}"]`)?.value.trim() || `实验${index+1}`,
+      depth: clampInt($(`[data-experiment-depth="${index}"]`)?.value,1,8,row.depth),
+      budget: clampInt($(`[data-experiment-budget="${index}"]`)?.value,1000,2000000,row.budget),
+    }));
+  }
+
+  function openStrategyExperiment() {
+    renderExperimentGroups();
+    $('#strategyExperimentProgress').hidden = true;
+    $('#strategyExperimentDialog').showModal();
+  }
+
+  function stopStrategyExperiment(message = '实验已停止。') {
+    if (strategyExperimentWorker) strategyExperimentWorker.terminate();
+    strategyExperimentWorker = null;
+    $('#cancelStrategyExperimentBtn').hidden = true;
+    $('#runStrategyExperimentBtn').disabled = false;
+    $('#strategyExperimentProgress').hidden = false;
+    $('#strategyExperimentProgress').textContent = message;
+  }
+
+  async function runStrategyExperiment() {
+    if (!strategyExperimentRows.length) { toast('请至少添加一个实验组。'); return; }
+    if (!candidateCache.length || state.challenges <= 0) { toast('当前状态无法运行策略实验。'); return; }
+    strategyExperimentRows = readExperimentGroups();
+    const progress = $('#strategyExperimentProgress');
+    progress.hidden = false;
+    progress.textContent = '正在准备增强行动集合…';
+    $('#runStrategyExperimentBtn').disabled = true;
+    $('#cancelStrategyExperimentBtn').hidden = false;
+    $('#strategyExperimentResults').innerHTML = '';
+    if (!lastQuickMetrics.length) await calculateRecommendations();
+    if (!lastQuickMetrics.length) { stopStrategyExperiment('无法建立行动集合。'); return; }
+    const actions = restrictedActionSet(candidateCache,lastQuickMetrics,[],true);
+    const knownMask = FIELDS.reduce((mask,field)=>mask|(state.known[field.key]?field.bit:0),0);
+    const source = window.STRATEGY_EXPERIMENT_WORKER_SOURCE;
+    if (!source) { stopStrategyExperiment('实验后台模块未载入。'); return; }
+    const url = URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+    strategyExperimentWorker = new Worker(url);
+    URL.revokeObjectURL(url);
+    const results = [];
+    strategyExperimentWorker.onmessage = ({data}) => {
+      if (data.type === 'group-start') progress.textContent = `正在运行 ${data.position+1}/${strategyExperimentRows.length}：${data.group.name}（深度 ${data.group.depth}，预算 ${data.group.budget.toLocaleString('zh-CN')}）`;
+      if (data.type === 'group-result' || data.type === 'group-error') {
+        results[data.position] = data;
+        $('#strategyExperimentResults').innerHTML = results.filter(Boolean).map((entry) => {
+          if (entry.type === 'group-error') return `<article class="experiment-result is-error"><header><strong>${escapeHtml(entry.group.name)}</strong><span>${entry.elapsed.toFixed(2)} 秒</span></header><p>深度 ${entry.group.depth} · 预算 ${entry.group.budget.toLocaleString('zh-CN')} · ${entry.limitReached?'达到状态上限':'计算错误'}</p></article>`;
+          const best = entry.result.action?.type === 'challenge' ? CARDS[entry.result.action.index]?.name : entry.result.action?.type === 'hint' ? '使用提示' : '停止';
+          const top = [...entry.result.rootActionValues].sort((a,b)=>compareObjectiveVectors(b.value,a.value)).slice(0,4);
+          return `<article class="experiment-result"><header><strong>${escapeHtml(entry.group.name)}</strong><span>${entry.elapsed.toFixed(2)} 秒</span></header><div class="experiment-summary"><span>深度 <b>${entry.group.depth}</b></span><span>预算 <b>${entry.group.budget.toLocaleString('zh-CN')}</b></span><span>展开 <b>${entry.result.expandedStates.toLocaleString('zh-CN')}</b></span><span>首选 <b>${escapeHtml(best||'—')}</b></span></div><p>策略价值：${entry.result.value.map((value)=>value.toFixed(4)).join('／')}</p><ol>${top.map((item)=>`<li>${escapeHtml(CARDS[item.action.index].name)} <small>${item.value.map((value)=>value.toFixed(3)).join('／')}</small></li>`).join('')}</ol></article>`;
+        }).join('');
+      }
+      if (data.type === 'complete') {
+        strategyExperimentWorker.terminate(); strategyExperimentWorker=null;
+        progress.textContent='全部实验完成。可比较深度、预算、耗时、展开状态与首选是否收敛。';
+        $('#cancelStrategyExperimentBtn').hidden=true; $('#runStrategyExperimentBtn').disabled=false;
+      }
+    };
+    strategyExperimentWorker.onerror = (event) => stopStrategyExperiment(`实验失败：${event.message}`);
+    strategyExperimentWorker.postMessage({type:'start',cards:CARDS,weights:CARDS.map((card)=>weightOf(card)),actions,
+      state:{hints:state.hints,challenges:state.challenges,candidates:candidateCache,knownMask,matchedMask:state.matchedMask,
+        guessed:state.logs.filter((log)=>log.type==='challenge').map((log)=>log.guess),remainingPuzzles:state.config.puzzles-state.puzzle+1,
+        resourceModel:{hintChallengeRatio:.61,equivalentCostPerSolve:3.9}},groups:strategyExperimentRows});
   }
 
   function populateBorderRevealChoices() {
@@ -2299,6 +2377,12 @@
     $('#feedbackCancelBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#calculateBtn').addEventListener('click', calculateRecommendations);
     $('#enhancedSearchToggle').addEventListener('change', () => { clearRecommendation(); toast($('#enhancedSearchToggle').checked ? '已启用实验性增强搜索；下一次计算会更慢，稳定策略与规模测试不受影响。' : '已恢复稳定搜索逻辑。'); });
+    $('#strategyExperimentBtn').addEventListener('click', openStrategyExperiment);
+    $('#strategyExperimentCloseBtn').addEventListener('click', () => $('#strategyExperimentDialog').close());
+    $('#runStrategyExperimentBtn').addEventListener('click', runStrategyExperiment);
+    $('#cancelStrategyExperimentBtn').addEventListener('click', () => stopStrategyExperiment());
+    $('#addExperimentGroupBtn').addEventListener('click', () => { strategyExperimentRows=readExperimentGroups(); strategyExperimentRows.push({name:`实验${strategyExperimentRows.length+1}`,depth:4,budget:200000}); renderExperimentGroups(); });
+    $('#experimentGroups').addEventListener('click',(event)=>{const button=event.target.closest('[data-remove-experiment]');if(!button)return;strategyExperimentRows=readExperimentGroups().filter((_,index)=>index!==Number(button.dataset.removeExperiment));renderExperimentGroups();});
     $('#compareRecommendationsBtn').addEventListener('click', () => {
       const seeds = lastRecommendations.slice(0, 4).map((item) => item.index);
       if (!seeds.length && selectedGuess == null) { toast('请先计算推荐，或在挑战区选择一张卡。'); return; }
