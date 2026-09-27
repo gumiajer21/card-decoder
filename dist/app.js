@@ -1359,7 +1359,8 @@
     }
     finalists.sort((a, b) => mode === 'balanced' ? compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)) : b.score - a.score);
     const exactDecision = mode === 'balanced' ? tryExactBellman(candidates, alreadyGuessed) : null;
-    const restrictedDecision = mode === 'balanced' && !exactDecision ? tryRestrictedPolicy(candidates, alreadyGuessed, quick) : null;
+    const enhancedSearch = mode === 'balanced' && $('#enhancedSearchToggle').checked;
+    const restrictedDecision = mode === 'balanced' && !exactDecision ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, enhancedSearch) : null;
     const policyDecision = exactDecision || restrictedDecision;
     lastProof = exactDecision || restrictedDecision || (mode === 'balanced' ? boundedCertificate(quick) : null);
     if (policyDecision?.action?.type === 'challenge') {
@@ -1373,10 +1374,20 @@
         finalists.unshift(exactItem);
       }
     }
-    lastRecommendations = finalists.slice(0, 6);
+    if (enhancedSearch && policyDecision?.rootActionValues?.length) {
+      const ranked = policyDecision.rootActionValues
+        .filter((entry) => entry.action?.type === 'challenge')
+        .sort((left, right) => compareObjectiveVectors(right.value, left.value))
+        .map((entry) => {
+          const item = finalists.find((candidate) => candidate.index === entry.action.index) || quickByIndex.get(entry.action.index);
+          return item ? { ...item, info:item.info ?? item.infoApprox ?? 0, policyValue: entry.value } : null;
+        })
+        .filter(Boolean);
+      lastRecommendations = ranked.slice(0, 6);
+    } else lastRecommendations = finalists.slice(0, 6);
     if (token !== calculationToken) return;
     const advice = policyDecision
-      ? { use: policyDecision.action.type === 'hint', entropy: expectedHintEntropy(candidates, total), strict: true, proven: Boolean(policyDecision.proven), method: policyDecision.method, value: policyDecision.value, expandedStates: policyDecision.expandedStates, depth: policyDecision.depth }
+      ? { use: policyDecision.action.type === 'hint', entropy: expectedHintEntropy(candidates, total), strict: true, proven: Boolean(policyDecision.proven), method: policyDecision.method, value: policyDecision.value, expandedStates: policyDecision.expandedStates, depth: policyDecision.depth, enhanced:Boolean(policyDecision.enhanced), actionCount:policyDecision.actionCount || policyDecision.rootActionValues?.length || 0 }
       : hintAdvice(candidates, total, lastRecommendations[0], mode);
     if (policyDecision?.action?.type === 'challenge') {
       const candidateSet = new Set(candidates);
@@ -1509,26 +1520,32 @@
     }
   }
 
-  function restrictedActionSet(candidates, quick, extras = []) {
+  function restrictedActionSet(candidates, quick, extras = [], enhanced = false) {
     const selected = new Set(extras);
-    [...quick].sort((a, b) => compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a))).slice(0, 18).forEach((item) => selected.add(item.index));
-    [...quick].sort((a, b) => b.infoApprox - a.infoApprox).slice(0, 8).forEach((item) => selected.add(item.index));
-    [...candidates].sort((a, b) => weightOf(CARDS[b]) - weightOf(CARDS[a])).slice(0, 8).forEach((index) => selected.add(index));
+    const addTop = (sorter, count) => [...quick].sort(sorter).slice(0, count).forEach((item) => selected.add(item.index));
+    addTop((a, b) => compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)), enhanced ? 30 : 18);
+    addTop((a, b) => b.infoApprox - a.infoApprox, enhanced ? 20 : 8);
+    [...candidates].sort((a, b) => weightOf(CARDS[b]) - weightOf(CARDS[a])).slice(0, enhanced ? 12 : 8).forEach((index) => selected.add(index));
+    if (enhanced) {
+      addTop((a, b) => b.solve - a.solve || b.newMatches - a.newMatches, 16);
+      addTop((a, b) => b.points - a.points || b.solve - a.solve, 16);
+      addTop((a, b) => b.newMatches - a.newMatches || b.infoApprox - a.infoApprox, 20);
+    }
     return [...selected];
   }
 
-  function tryRestrictedPolicy(candidates, alreadyGuessed, quick) {
+  function tryRestrictedPolicy(candidates, alreadyGuessed, quick, enhanced = false) {
     if (!window.DecoderSolver?.solveRestrictedHorizon || !quick.length) return null;
-    const selected = restrictedActionSet(candidates, quick);
+    const selected = restrictedActionSet(candidates, quick, [], enhanced);
     const knownMask = FIELDS.reduce((mask, field) => mask | (state.known[field.key] ? field.bit : 0), 0);
     const base = { cards: CARDS, weights: CARDS.map((card) => weightOf(card)), actions: selected,
       hints: state.hints, challenges: state.challenges, candidates, knownMask, matchedMask: state.matchedMask,
-      guessed: [...alreadyGuessed], maxStates: 24000, remainingPuzzles: state.config.puzzles - state.puzzle + 1,
+      guessed: [...alreadyGuessed], maxStates: enhanced ? 80000 : 24000, remainingPuzzles: state.config.puzzles - state.puzzle + 1,
       resourceModel: { hintChallengeRatio: .61, equivalentCostPerSolve: 3.9 } };
     for (const depth of [3, 2]) {
       try {
         const result = window.DecoderSolver.solveRestrictedHorizon({ ...base, depth });
-        return { ...result, proven: false, lower: result.value, upper: window.DecoderSolver.stateUpperBound({ config: state.config, puzzle: state.puzzle, challenges: state.challenges }) };
+        return { ...result, enhanced, actionCount:selected.length, proven: false, lower: result.value, upper: window.DecoderSolver.stateUpperBound({ config: state.config, puzzle: state.puzzle, challenges: state.challenges }) };
       } catch (error) {
         if (!String(error.message).startsWith('HORIZON_STATE_LIMIT:')) console.error(error);
       }
@@ -1640,9 +1657,11 @@
     $('#metricInfo').textContent = `${(recommendHint ? hint.entropy : best.info).toFixed(2)} bit`;
     $('#alternatives').innerHTML = chooseAny
       ? equivalentChoices.slice(0,8).map((index,offset)=>`<button class="alternative" type="button" data-recommend-index="${index}"><div class="alternative-title"><b>=</b><span>${escapeHtml(CARDS[index].name)}</span></div><div class="alternative-metrics"><span><small>关系</small>并列最优</span><span><small>操作</small>点击选择</span></div></button>`).join('')
-      : recommendations.slice(recommendHint ? 0 : 1, recommendHint ? 3 : 4).map((item, offset) => `<button class="alternative" type="button" data-recommend-index="${item.index}"><div class="alternative-title"><b>${offset + 1}</b><span>${escapeHtml(CARDS[item.index].name)}</span></div><div class="alternative-metrics"><span><small>期望</small>${item.points.toFixed(2)}</span><span><small>通关</small>${formatPercent(item.solve)}</span><span><small>信息</small>${item.info.toFixed(2)} bit</span></div></button>`).join('');
+      : recommendations.slice(recommendHint ? 0 : 1, recommendHint ? 3 : 4).map((item, offset) => `<button class="alternative" type="button" data-recommend-index="${item.index}"><div class="alternative-title"><b>${offset + 1}</b><span>${escapeHtml(CARDS[item.index].name)}</span></div><div class="alternative-metrics">${item.policyValue ? `<span><small>策略解题</small>${item.policyValue[0].toFixed(4)}</span><span><small>策略相符</small>${item.policyValue[1].toFixed(3)}</span><span><small>策略行动</small>${(-item.policyValue[2]).toFixed(3)}</span>` : `<span><small>期望</small>${item.points.toFixed(2)}</span><span><small>通关</small>${formatPercent(item.solve)}</span><span><small>信息</small>${item.info.toFixed(2)} bit</span>`}</div></button>`).join('');
     $('#methodNote').textContent = hint.method === 'restricted-horizon'
-      ? `当前为受限深度自适应策略树：提示与挑战使用相同递归和终止规则；结果是合法可行策略，不等于全局最优证明。`
+      ? hint.enhanced
+        ? `实验性增强搜索：已将 ${hint.actionCount} 张多方向代表卡放入同一深度 ${hint.depth} 策略树，前四按强制首步后的策略价值排序；仍不等于全局最优证明。`
+        : `当前为受限深度自适应策略树：提示与挑战使用相同递归和终止规则；结果是合法可行策略，不等于全局最优证明。`
       : `严格模式按预期解题数、首次相符项数、负行动数作词典序比较；信息熵只用于解释。`;
   }
 
@@ -2279,6 +2298,7 @@
     $('#feedbackCloseBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#feedbackCancelBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#calculateBtn').addEventListener('click', calculateRecommendations);
+    $('#enhancedSearchToggle').addEventListener('change', () => { clearRecommendation(); toast($('#enhancedSearchToggle').checked ? '已启用实验性增强搜索；下一次计算会更慢，稳定策略与规模测试不受影响。' : '已恢复稳定搜索逻辑。'); });
     $('#compareRecommendationsBtn').addEventListener('click', () => {
       const seeds = lastRecommendations.slice(0, 4).map((item) => item.index);
       if (!seeds.length && selectedGuess == null) { toast('请先计算推荐，或在挑战区选择一张卡。'); return; }

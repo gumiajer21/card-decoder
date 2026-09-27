@@ -61,7 +61,7 @@
       <p class="mode-guide" id="modeGuide">统一比较提示与挑战；精确时给出证明，超出规模时显示严格上下界。</p>
       <div class="recommendation-card empty-state" id="recommendationCard"><div class="scan-orbit" aria-hidden="true"><i></i><i></i><i></i><span>6</span></div><img id="recommendImage" class="recommend-image" alt="" hidden><div class="recommend-heading"><button id="recommendTitle" class="recommend-title" type="button" disabled>录入初始揭示</button><button id="copyRecommendCard" class="quiet-btn" type="button" hidden>复制卡名</button></div><p id="recommendReason">加入本题已经显示的字段，求解器会筛选候选并计算推荐挑战。</p><div class="recommend-card-stats" id="recommendCardStats" hidden></div></div>
       <div class="metric-grid"><div><span>期望即时得分</span><strong id="metricPoints">—</strong></div><div><span>本次通关概率</span><strong id="metricSolve">—</strong></div><div><span>信息增益</span><strong id="metricInfo">—</strong></div></div>
-      <div class="recommend-actions"><button class="calculate-btn" id="calculateBtn" type="button">计算最佳挑战</button><button class="quiet-btn" id="compareRecommendationsBtn" type="button">策略价值对比</button></div>
+      <div class="recommend-actions"><button class="calculate-btn" id="calculateBtn" type="button">计算最佳挑战</button><button class="quiet-btn" id="compareRecommendationsBtn" type="button">策略价值对比</button></div><label class="experimental-search"><input id="enhancedSearchToggle" type="checkbox"><span><b>实验性增强搜索</b><small>默认关闭；扩大行动集合并按策略价值排列前四，计算会更慢。</small></span></label>
       <div class="calc-progress" id="calcProgress" hidden><span></span><em>正在比较合法挑战…</em></div><div class="alternatives" id="alternatives"></div>
       <p class="method-note" id="methodNote">信息熵仅作解释，不再折算成奖励；边界重叠时不会宣称策略已被证明最优。</p>
     </aside>

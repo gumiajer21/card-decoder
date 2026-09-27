@@ -210,6 +210,11 @@ select:focus, input:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba
 .recommendation-panel { align-self: start; }
 .recommend-actions { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
 .recommend-actions .calculate-btn { width:100%; }
+.experimental-search { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:8px 10px; border:1px dashed rgba(248,212,119,.32); border-radius:8px; background:rgba(248,212,119,.05); cursor:pointer; }
+.experimental-search input { width:18px; height:18px; flex:0 0 auto; margin-top:1px; accent-color:var(--gold); }
+.experimental-search b,.experimental-search small { display:block; }
+.experimental-search b { color:var(--gold); font-size:.7rem; }
+.experimental-search small { margin-top:2px; color:var(--muted); font-size:.62rem; line-height:1.4; }
 .mode-guide { min-height: 2.7em; margin: -7px 2px 10px; color: var(--muted); font-size: .72rem; line-height: 1.55; }
 .recommendation-card { min-height: 248px; padding: 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: radial-gradient(circle at 50% 20%, rgba(14,165,233,.12), transparent 46%), rgba(5,13,25,.58); }
 .recommendation-card:not(.empty-state) { display: block; text-align: left; }
@@ -624,6 +629,7 @@ html[data-theme="light"] .strategy-summary { background:#fff; }
 html[data-theme="light"] .strategy-summary>div>span { background:#edf3f7; }
 html[data-theme="light"] .strategy-summary.is-best { border-color:rgba(151,97,5,.42); background:#fff4cc; }
 html[data-theme="light"] .comparison-progress { color:#08756f; background:#edf8f6; }
+html[data-theme="light"] .experimental-search { border-color:rgba(151,97,5,.35); background:#fff9e8; }
 html[data-theme="light"] .simulation-workers b,
 html[data-theme="light"] .history-match-chips span { color:#08756f; }
 html[data-theme="light"] .history-match-chips span { background:rgba(15,159,149,.10); }

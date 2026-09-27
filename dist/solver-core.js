@@ -70,6 +70,7 @@
     const memo = new Map();
     const startMemo = new Map();
     let expandedStates = 0;
+    const rootActionValues = [];
     const maxStates = options.maxStates || 250000;
 
     function mass(indices) { return indices.reduce((sum, index) => sum + weights[index], 0); }
@@ -101,7 +102,7 @@
       return result;
     }
 
-    function visit(state, forcedAction = null) {
+    function visit(state, forcedAction = null, isRoot = false) {
       if (state.puzzle > config.puzzles) return { value: [1, 0, 0], action: null, exact: true };
       if (state.challenges <= 0 || !state.candidates.length) return { value: [terminalPremium(config, state.puzzle), 0, 0], action: null, exact: true };
       const forcedKey = forcedAction ? `${forcedAction.type}:${forcedAction.index ?? ''}` : '';
@@ -130,6 +131,7 @@
         }
         hintValue[2] -= 1;
         best = { value: hintValue, action: { type: 'hint' }, optimalActions: [{ type: 'hint' }], exact: true };
+        if (isRoot) rootActionValues.push({ action: { type: 'hint' }, value: hintValue });
       }
 
       for (const guessIndex of actions) {
@@ -169,6 +171,7 @@
         }
         const action = { type: 'challenge', index: guessIndex };
         const candidate = { value: actionValue, action, optimalActions: [action], exact: true };
+        if (isRoot) rootActionValues.push({ action, value: actionValue });
         if (!best || compare(candidate.value, best.value) > 0) best = candidate;
         else if (compare(candidate.value, best.value) === 0) best.optimalActions.push(action);
       }
@@ -185,8 +188,8 @@
       matchedMask: options.matchedMask || 0,
       guessed: new Set(options.guessed || []),
     };
-    const result = visit(initialState, options.forcedAction || null);
-    return { ...result, expandedStates, memoStates: memo.size, objective: ['预期解题数', '预期首次相符项数', '负预期行动数'] };
+    const result = visit(initialState, options.forcedAction || null, true);
+    return { ...result, rootActionValues, expandedStates, memoStates: memo.size, objective: ['预期解题数', '预期首次相符项数', '负预期行动数'] };
   }
 
   function stateUpperBound({ config, puzzle, challenges }) {
@@ -204,7 +207,7 @@
     const maxDepth = options.depth || 3, maxStates = options.maxStates || 40000;
     const remainingPuzzles = Math.max(1, options.remainingPuzzles || 1);
     const resourceModel = options.resourceModel || { hintChallengeRatio: 0.61, equivalentCostPerSolve: 3.9 };
-    const memo = new Map(); let expandedStates = 0;
+    const memo = new Map(); let expandedStates = 0; const rootActionValues=[];
     const mass = (indices) => indices.reduce((sum, index) => sum + weights[index], 0);
     function continuationValue(hints, challenges) {
       const future = remainingPuzzles - 1;
@@ -213,7 +216,7 @@
       const solved = Math.min(future, challenges, equivalent / resourceModel.equivalentCostPerSolve);
       return [solved, solved * 6, 0];
     }
-    function visit(state, depth, forcedAction = null) {
+    function visit(state, depth, forcedAction = null, isRoot = false) {
       if (depth <= 0 || !state.candidates.length || (!state.hints && !state.challenges)) return { value: [...ZERO], action: { type: 'stop' } };
       const forcedKey = forcedAction ? `${forcedAction.type}:${forcedAction.index ?? ''}` : '';
       const key = `${depth}|${state.hints}|${state.challenges}|${state.knownMask}|${state.matchedMask}|${state.candidates.join(',')}|${[...state.guessed].sort((a,b)=>a-b).join(',')}|${forcedKey}`;
@@ -235,6 +238,7 @@
         }
         value[2]-=1;
         consider(value,{type:'hint'});
+        if(isRoot)rootActionValues.push({action:{type:'hint'},value});
       }
       if (state.challenges > 0) for (const guessIndex of actions) {
         if(forcedAction&&(forcedAction.type!=='challenge'||forcedAction.index!==guessIndex))continue;
@@ -249,12 +253,14 @@
           else {const guessed=new Set(state.guessed);guessed.add(guessIndex);branch=add(branch,visit({...state,challenges:state.challenges-1,candidates:outcome.targets,knownMask:state.knownMask|outcome.match,matchedMask:state.matchedMask|outcome.strict,guessed},depth-1).value);}
           value=add(value,scale(branch,p));
         }
-        consider(value,{type:'challenge',index:guessIndex});
+        const action={type:'challenge',index:guessIndex};
+        consider(value,action);
+        if(isRoot)rootActionValues.push({action,value});
       }
       memo.set(key,best); return best;
     }
-    const result=visit({hints:options.hints,challenges:options.challenges,candidates:[...options.candidates].sort((a,b)=>a-b),knownMask:options.knownMask||0,matchedMask:options.matchedMask||0,guessed:new Set(options.guessed||[])},maxDepth,options.forcedAction||null);
-    return {...result,expandedStates,memoStates:memo.size,depth:maxDepth,method:'restricted-horizon'};
+    const result=visit({hints:options.hints,challenges:options.challenges,candidates:[...options.candidates].sort((a,b)=>a-b),knownMask:options.knownMask||0,matchedMask:options.matchedMask||0,guessed:new Set(options.guessed||[])},maxDepth,options.forcedAction||null,true);
+    return {...result,rootActionValues,expandedStates,memoStates:memo.size,depth:maxDepth,method:'restricted-horizon'};
   }
 
   root.DecoderSolver = { FIELDS, add, scale, compare, maxVector, matchMask, strictMatchMask, isExactAnswer, solveExact, solveRestrictedHorizon, stateUpperBound };

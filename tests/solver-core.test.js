@@ -55,4 +55,12 @@ const forcedRestricted = solveRestrictedHorizon({
   remainingPuzzles: 1,
 });
 assert.equal(forcedRestricted.action.index, 0, '受限策略树也必须执行固定首步，不能改为停止或其他卡');
+
+const rankedRoots = solveRestrictedHorizon({
+  cards: [effect, effectPendulum], weights: [1, 1], actions: [0, 1],
+  hints: 0, challenges: 1, candidates: [1], knownMask: 0, matchedMask: 0,
+  guessed: [], depth: 2, remainingPuzzles: 1,
+});
+assert.equal(rankedRoots.rootActionValues.length, 2, '应返回所有保留首步行动的策略价值以供统一排序');
+assert.equal(rankedRoots.rootActionValues.find((entry) => entry.action.index === 1).value[0], 1, '正确首步的策略解题价值应为 1');
 console.log('solver-core tests passed');
