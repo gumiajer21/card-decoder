@@ -464,7 +464,26 @@ html[data-theme="light"] .result-grid article { background: rgba(246,250,252,.94
 html[data-theme="light"] .field-card.is-known,
 html[data-theme="light"] .selected-card,
 html[data-theme="light"] .feedback-toggle.is-on { background: linear-gradient(135deg, rgba(15,159,149,.10), rgba(22,121,184,.06)); }
-html[data-theme="light"] .field-card.is-known { background: rgba(249,252,254,.98); }
+html[data-theme="light"] .field-card {
+  border-color: rgba(71,103,126,.28);
+  background: linear-gradient(90deg,#f4f8fa,#eaf1f5);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 3px rgba(43,67,84,.08);
+}
+html[data-theme="light"] .field-card .field-content > span { color:#526a7b; }
+html[data-theme="light"] .field-card strong { color:#172b3a; }
+html[data-theme="light"] .field-card.is-known {
+  border-color:#9a7400;
+  background: linear-gradient(90deg,#d6b934,#f3df72 55%,#d7b62c);
+  box-shadow: inset 4px 0 0 #765500, inset 0 1px 0 rgba(255,255,255,.58), 0 2px 7px rgba(112,82,0,.18);
+}
+html[data-theme="light"] .field-card.is-known .field-content > span { color:#493900; }
+html[data-theme="light"] .field-card.is-known strong { color:#211900; text-shadow:0 1px 0 rgba(255,255,255,.38); }
+html[data-theme="light"] .field-card.is-known .field-glyph { color:#173d58; }
+html[data-theme="light"] .field-card.is-matched {
+  border-color:#6f5000;
+  box-shadow: inset 5px 0 0 #513900, inset 0 1px 0 rgba(255,255,255,.65), 0 0 0 2px rgba(181,133,0,.18), 0 3px 9px rgba(94,68,0,.2);
+}
+html[data-theme="light"] .field-card.is-matched .field-state { color:#493300; }
 html[data-theme="light"] .candidate-pill,
 html[data-theme="light"] .status-badge { background: rgba(255,255,255,.76); }
 html[data-theme="light"] .candidate-tools input,
