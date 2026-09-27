@@ -166,6 +166,7 @@ select:focus, input:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba
 .search-result small { color: var(--muted); font-size: .68rem; }
 .selected-card { display: grid; grid-template-columns: 180px minmax(0,1fr); align-items: stretch; gap: 20px; margin-top: 10px; padding: 16px; border: 1px solid var(--line-strong); border-radius: 12px; background: rgba(20,184,166,.08); }
 .selected-card .card-art { width: 180px; }
+.selected-card > .card-art { align-self:start; height:auto; object-fit:contain; }
 .selected-card > .grow { min-width: 0; }
 .selected-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .selected-card-heading span { display: block; color: var(--muted); font-size: .72rem; }
@@ -207,6 +208,8 @@ select:focus, input:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba
 .form-footer .form-help { max-width: 580px; }
 
 .recommendation-panel { align-self: start; }
+.recommend-actions { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.recommend-actions .calculate-btn { width:100%; }
 .mode-guide { min-height: 2.7em; margin: -7px 2px 10px; color: var(--muted); font-size: .72rem; line-height: 1.55; }
 .recommendation-card { min-height: 248px; padding: 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: radial-gradient(circle at 50% 20%, rgba(14,165,233,.12), transparent 46%), rgba(5,13,25,.58); }
 .recommendation-card:not(.empty-state) { display: block; text-align: left; }
@@ -350,6 +353,23 @@ html[data-theme="light"] .pool-caveat { color: #76570c; background: rgba(245,188
 .test-target-selected { display:grid; gap:3px; margin-top:9px; padding:10px 12px; border:1px solid var(--line-strong); border-radius:9px; background:rgba(20,184,166,.08); }
 .test-target-selected span,.test-target-selected small { color:var(--muted); font-size:.68rem; }
 .test-target-selected strong { color:var(--sky); }
+.compare-modal { width:min(980px,calc(100% - 24px)); }
+.compare-search { position:relative; }
+.comparison-list { display:grid; gap:9px; margin-top:15px; max-height:58vh; overflow:auto; }
+.comparison-card { display:grid; grid-template-columns:58px minmax(0,1fr); gap:12px; padding:10px; border:1px solid var(--line); border-radius:10px; background:rgba(12,26,43,.44); }
+.comparison-card>img { width:58px; aspect-ratio:59/86; align-self:start; object-fit:contain; border-radius:4px; background:rgba(0,0,0,.13); }
+.comparison-main { min-width:0; }
+.comparison-main>small { display:block; margin:3px 0 8px; overflow:hidden; color:var(--muted); font-size:.65rem; text-overflow:ellipsis; white-space:nowrap; }
+.comparison-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.comparison-title strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.comparison-title button { width:27px; height:27px; flex:0 0 auto; border:1px solid var(--line); border-radius:7px; color:var(--muted); background:transparent; }
+.comparison-metrics { display:grid; grid-template-columns:repeat(6,minmax(82px,1fr)); gap:6px; }
+.comparison-metrics>span { padding:7px 8px; border:1px solid var(--line); border-radius:7px; background:rgba(7,16,31,.42); }
+.comparison-metrics small,.comparison-metrics b { display:block; }
+.comparison-metrics small { color:var(--muted); font-size:.61rem; }
+.comparison-metrics b { margin-top:3px; font-size:.72rem; }
+.comparison-metrics>span.is-best { border-color:rgba(248,212,119,.5); background:rgba(248,212,119,.10); }
+.comparison-metrics>span.is-best b { color:var(--gold); }
 .feedback-modal { width: min(760px,calc(100% - 24px)); }
 
 .modal { width: min(720px, calc(100% - 24px)); max-height: calc(100vh - 30px); padding: 0; overflow: auto; border: 1px solid var(--line-strong); border-radius: 16px; color: var(--text); background: #081525; box-shadow: 0 28px 90px rgba(0,0,0,.72); }
@@ -581,6 +601,10 @@ html[data-theme="light"] .origin-note { border-color:rgba(8,145,135,.3); backgro
 html[data-theme="light"] .simulation-live { border-color:rgba(8,145,135,.28); background:rgba(15,159,149,.07); }
 html[data-theme="light"] .test-target-picker { background:#f4f8fa; }
 html[data-theme="light"] .test-target-selected { background:#edf8f6; }
+html[data-theme="light"] .comparison-card { background:#f5f9fb; }
+html[data-theme="light"] .comparison-card>img { background:#e7eef3; }
+html[data-theme="light"] .comparison-metrics>span { background:#fff; }
+html[data-theme="light"] .comparison-metrics>span.is-best { border-color:rgba(151,97,5,.42); background:#fff4cc; }
 html[data-theme="light"] .simulation-workers b,
 html[data-theme="light"] .history-match-chips span { color:#08756f; }
 html[data-theme="light"] .history-match-chips span { background:rgba(15,159,149,.10); }
@@ -647,5 +671,7 @@ html[data-theme="light"] input[type="checkbox"] { accent-color:#0f8d84; }
   .card-art, .selected-card .card-art { width: min(100%, 170px); }
   .selected-card { grid-template-columns: 1fr; }
   .selected-card-facts { grid-template-columns: 1fr 1fr; }
+  .recommend-actions { grid-template-columns:1fr; }
+  .comparison-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .test-actions, .history-summary { grid-template-columns: 1fr; }
 }

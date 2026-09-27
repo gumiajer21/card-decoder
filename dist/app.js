@@ -84,6 +84,7 @@
   let toastTimer = null;
   let testSession = null;
   let pendingTestTarget = null;
+  let comparisonIndices = [];
   let simulationRunning = false;
   let simulationWorkers = [];
   let simulationWorkerUrl = null;
@@ -1050,6 +1051,60 @@
     const element = $('#challengeEvaluation');
     element.hidden = false;
     element.innerHTML = `<div><span>期望即时得分</span><strong>${result.points.toFixed(2)}</strong></div><div><span>直接通关概率</span><strong>${formatPercent(result.solve)}</strong></div><div><span>信息增益</span><strong>${result.info.toFixed(2)} bit</strong></div><div><span>期望新增相符项</span><strong>${result.newMatches.toFixed(2)}</strong></div><div><span>反馈后平均剩余</span><strong>${result.remaining.toFixed(result.remaining < 10 ? 2 : 1)} 张</strong></div><div><span>可能反馈分支</span><strong>${result.outcomes}</strong></div>`;
+  }
+
+  function addComparisonCard(index, { quiet = false } = {}) {
+    const value = Number(index);
+    if (!Number.isInteger(value) || !CARDS[value]) return;
+    if (comparisonIndices.includes(value)) {
+      if (!quiet) toast('这张卡已经在收益对比中。');
+      return;
+    }
+    if (comparisonIndices.length >= 8) {
+      toast('一次最多对比 8 张卡，请先移除一张。');
+      return;
+    }
+    comparisonIndices.push(value);
+    renderComparisonList();
+  }
+
+  function renderComparisonList() {
+    const container = $('#comparisonList');
+    if (!comparisonIndices.length) {
+      container.innerHTML = '<div class="empty-inline">从挑战区、推荐结果或上方搜索中加入卡片。</div>';
+      return;
+    }
+    const rows = comparisonIndices.map((index) => evaluateChallengeAction(index)).filter(Boolean);
+    const best = {
+      points: Math.max(...rows.map((item) => item.points)),
+      solve: Math.max(...rows.map((item) => item.solve)),
+      info: Math.max(...rows.map((item) => item.info)),
+      newMatches: Math.max(...rows.map((item) => item.newMatches)),
+      remaining: Math.min(...rows.map((item) => item.remaining)),
+    };
+    const mark = (value, target) => Math.abs(value - target) < 1e-10 ? ' is-best' : '';
+    container.innerHTML = rows.map((item) => {
+      const card = CARDS[item.index];
+      return `<article class="comparison-card"><img data-compare-image="${item.index}" alt=""><div class="comparison-main"><div class="comparison-title"><strong>${escapeHtml(card.name)}</strong><button type="button" data-remove-comparison="${item.index}" aria-label="移除">×</button></div><small>${escapeHtml(cardStats(card))}</small><div class="comparison-metrics"><span class="${mark(item.points,best.points)}"><small>期望得分</small><b>${item.points.toFixed(2)}</b></span><span class="${mark(item.solve,best.solve)}"><small>通关概率</small><b>${formatPercent(item.solve)}</b></span><span class="${mark(item.info,best.info)}"><small>信息增益</small><b>${item.info.toFixed(2)} bit</b></span><span class="${mark(item.newMatches,best.newMatches)}"><small>新增相符</small><b>${item.newMatches.toFixed(2)}</b></span><span class="${mark(item.remaining,best.remaining)}"><small>平均剩余</small><b>${item.remaining.toFixed(item.remaining < 10 ? 2 : 1)} 张</b></span><span><small>反馈分支</small><b>${item.outcomes}</b></span></div></div></article>`;
+    }).join('');
+    $$('[data-compare-image]').forEach((image) => setCardImage(image, CARDS[Number(image.dataset.compareImage)], true, 'card-back.png'));
+  }
+
+  function openChallengeComparison(seed = []) {
+    seed.forEach((index) => addComparisonCard(index, { quiet: true }));
+    $('#compareCardSearch').value = '';
+    $('#compareCardResults').hidden = true;
+    renderComparisonList();
+    $('#challengeCompareDialog').showModal();
+  }
+
+  function showComparisonSearchResults() {
+    const query = $('#compareCardSearch').value.trim();
+    const container = $('#compareCardResults');
+    if (!query) { container.hidden = true; return; }
+    const results = searchCards(query);
+    container.hidden = false;
+    container.innerHTML = results.length ? results.map((index) => `<button class="search-result" type="button" data-compare-card-index="${index}"><span><strong>${escapeHtml(CARDS[index].name)}</strong><small>${escapeHtml(cardStats(CARDS[index]))}</small></span><small>${comparisonIndices.includes(index) ? '已加入' : '加入'}</small></button>`).join('') : '<div class="empty-inline">没有找到卡名</div>';
   }
 
   function populateBorderRevealChoices() {
@@ -2135,6 +2190,10 @@
     $('#clearSelectedCard').addEventListener('click', clearGuess);
     $('#copySelectedCard').addEventListener('click', () => copyCardName(CARDS[Number($('#copySelectedCard').dataset.cardIndex)]));
     $('#evaluateChallengeBtn').addEventListener('click', calculateSelectedChallenge);
+    $('#compareSelectedCardBtn').addEventListener('click', () => {
+      if (selectedGuess == null) { toast('请先选择一张挑战卡。'); return; }
+      openChallengeComparison([selectedGuess]);
+    });
     $('#feedbackGrid').addEventListener('click', (event) => {
       const button = event.target.closest('[data-feedback-bit]');
       if (!button) return;
@@ -2149,6 +2208,11 @@
     $('#feedbackCloseBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#feedbackCancelBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#calculateBtn').addEventListener('click', calculateRecommendations);
+    $('#compareRecommendationsBtn').addEventListener('click', () => {
+      const seeds = lastRecommendations.slice(0, 4).map((item) => item.index);
+      if (!seeds.length && selectedGuess == null) { toast('请先计算推荐，或在挑战区选择一张卡。'); return; }
+      openChallengeComparison(seeds.length ? seeds : [selectedGuess]);
+    });
     $('#recommendMode').addEventListener('change', () => { renderModeGuide(); clearRecommendation(); calculateRecommendations(); });
     $('#recommendTitle').addEventListener('click', () => {
       const index = Number($('#recommendTitle').dataset.cardIndex);
@@ -2293,6 +2357,23 @@
       renderTestTargetPicker();
     });
     $('#testSetupForm').addEventListener('submit', (event) => { event.preventDefault(); try { applyTestSetup(); } catch (error) { toast(error.message); } });
+    $('#challengeCompareCloseBtn').addEventListener('click', () => $('#challengeCompareDialog').close());
+    $('#challengeCompareDoneBtn').addEventListener('click', () => $('#challengeCompareDialog').close());
+    $('#clearComparisonBtn').addEventListener('click', () => { comparisonIndices = []; renderComparisonList(); });
+    $('#compareCardSearch').addEventListener('input', showComparisonSearchResults);
+    $('#compareCardResults').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-compare-card-index]');
+      if (!button) return;
+      addComparisonCard(Number(button.dataset.compareCardIndex));
+      $('#compareCardSearch').value = '';
+      $('#compareCardResults').hidden = true;
+    });
+    $('#comparisonList').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-remove-comparison]');
+      if (!button) return;
+      comparisonIndices = comparisonIndices.filter((index) => index !== Number(button.dataset.removeComparison));
+      renderComparisonList();
+    });
     $('#newTestTargetBtn').addEventListener('click', newTestTarget);
     $('#exitTestBtn').addEventListener('click', exitTestMode);
     $('#revealTargetBtn').addEventListener('click', revealSessionTarget);
