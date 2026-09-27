@@ -505,6 +505,78 @@ html[data-theme="light"] .danger-btn { color: var(--danger); }
 html[data-theme="light"] .search-result:hover,
 html[data-theme="light"] .search-result:focus { background: rgba(37,99,235,.07); }
 
+/* Light theme contrast: components whose dark-theme fills are otherwise too strong or too pale. */
+html[data-theme="light"] .public-links button,
+html[data-theme="light"] .public-links a,
+html[data-theme="light"] .quiet-btn {
+  border-color:rgba(8,117,111,.38);
+  color:#08756f;
+  background:rgba(15,159,149,.08);
+}
+html[data-theme="light"] .public-links span { color:#fff; background:#1679b8; }
+html[data-theme="light"] .creator-notice strong { color:#126b9d; }
+html[data-theme="light"] .event-stats label { background:rgba(255,255,255,.78); }
+html[data-theme="light"] .score-chip { border-color:rgba(151,97,5,.28); background:rgba(184,122,12,.08); }
+
+html[data-theme="light"] .tab {
+  border-color:rgba(39,78,105,.2);
+  color:#526b7d;
+  background:#edf3f7;
+}
+html[data-theme="light"] .tab.is-active {
+  border-color:rgba(22,121,184,.42);
+  color:#0c659d;
+  background:#dceef9;
+}
+html[data-theme="light"] .border-reveal-wrap,
+html[data-theme="light"] .pendulum-check { border-color:rgba(145,101,10,.35); background:rgba(212,166,40,.10); }
+html[data-theme="light"] .border-choice {
+  border-color:rgba(39,78,105,.24);
+  color:#405c70;
+  background:#f5f8fa;
+}
+html[data-theme="light"] .border-choice:hover { border-color:#64869e; background:#e8f0f5; }
+html[data-theme="light"] .border-choice.is-on {
+  border-color:#8a6105;
+  color:#3d2b03;
+  background:#f2d879;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.5);
+}
+
+html[data-theme="light"] .recommendation-card {
+  background:radial-gradient(circle at 50% 20%,rgba(14,165,233,.10),transparent 46%),#f8fbfd;
+}
+html[data-theme="light"] .recommend-card-stats span,
+html[data-theme="light"] .alternative-metrics > span {
+  border-color:rgba(22,121,184,.2);
+  color:#0c659d;
+  background:#edf6fb;
+}
+html[data-theme="light"] .alternative:hover { background:#eaf6f4; }
+
+html[data-theme="light"] .faq-list details,
+html[data-theme="light"] .group-card-entry,
+html[data-theme="light"] .simulation-workers article,
+html[data-theme="light"] .manual-match-grid label {
+  border-color:rgba(39,78,105,.18);
+  background:#f4f8fa;
+}
+html[data-theme="light"] .faq-list summary { color:#18364a; }
+html[data-theme="light"] .origin-note { border-color:rgba(8,145,135,.3); background:#f2faf9; }
+html[data-theme="light"] .simulation-live { border-color:rgba(8,145,135,.28); background:rgba(15,159,149,.07); }
+html[data-theme="light"] .simulation-workers b,
+html[data-theme="light"] .history-match-chips span { color:#08756f; }
+html[data-theme="light"] .history-match-chips span { background:rgba(15,159,149,.10); }
+
+html[data-theme="light"] .card-art,
+html[data-theme="light"] .history-item > img,
+html[data-theme="light"] .candidate-thumb,
+html[data-theme="light"] .database-card img { background:#e7eef3; }
+html[data-theme="light"] .data-note button,
+html[data-theme="light"] .manual-record-row button { color:#b52843; }
+html[data-theme="light"] .archive-btn { border-color:rgba(8,117,111,.42)!important; color:#08756f!important; }
+html[data-theme="light"] input[type="checkbox"] { accent-color:#0f8d84; }
+
 @keyframes fade-in { from { opacity: 0; transform: translateY(3px); } }
 @keyframes scan { from { transform: translateX(-120%); } to { transform: translateX(720%); } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
