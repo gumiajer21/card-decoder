@@ -101,17 +101,18 @@
       return result;
     }
 
-    function visit(state) {
+    function visit(state, forcedAction = null) {
       if (state.puzzle > config.puzzles) return { value: [1, 0, 0], action: null, exact: true };
       if (state.challenges <= 0 || !state.candidates.length) return { value: [terminalPremium(config, state.puzzle), 0, 0], action: null, exact: true };
-      const key = stateKey(state);
+      const forcedKey = forcedAction ? `${forcedAction.type}:${forcedAction.index ?? ''}` : '';
+      const key = `${stateKey(state)}|${forcedKey}`;
       if (memo.has(key)) return memo.get(key);
       expandedStates += 1;
       if (expandedStates > maxStates) throw new Error(`EXACT_STATE_LIMIT:${maxStates}`);
       const total = mass(state.candidates);
       let best = null;
 
-      if (state.hints > 0 && state.knownMask !== 63) {
+      if (state.hints > 0 && state.knownMask !== 63 && (!forcedAction || forcedAction.type === 'hint')) {
         const unknown = FIELDS.map((field, index) => ({ ...field, index })).filter((field) => !(state.knownMask & field.bit));
         let hintValue = [...ZERO];
         for (const field of unknown) {
@@ -132,6 +133,7 @@
       }
 
       for (const guessIndex of actions) {
+        if (forcedAction && (forcedAction.type !== 'challenge' || forcedAction.index !== guessIndex)) continue;
         if (state.guessed.has(guessIndex)) continue;
         const outcomes = new Map();
         for (const targetIndex of state.candidates) {
@@ -183,7 +185,7 @@
       matchedMask: options.matchedMask || 0,
       guessed: new Set(options.guessed || []),
     };
-    const result = visit(initialState);
+    const result = visit(initialState, options.forcedAction || null);
     return { ...result, expandedStates, memoStates: memo.size, objective: ['预期解题数', '预期首次相符项数', '负预期行动数'] };
   }
 
@@ -211,18 +213,19 @@
       const solved = Math.min(future, challenges, equivalent / resourceModel.equivalentCostPerSolve);
       return [solved, solved * 6, 0];
     }
-    function visit(state, depth) {
+    function visit(state, depth, forcedAction = null) {
       if (depth <= 0 || !state.candidates.length || (!state.hints && !state.challenges)) return { value: [...ZERO], action: { type: 'stop' } };
-      const key = `${depth}|${state.hints}|${state.challenges}|${state.knownMask}|${state.matchedMask}|${state.candidates.join(',')}|${[...state.guessed].sort((a,b)=>a-b).join(',')}`;
+      const forcedKey = forcedAction ? `${forcedAction.type}:${forcedAction.index ?? ''}` : '';
+      const key = `${depth}|${state.hints}|${state.challenges}|${state.knownMask}|${state.matchedMask}|${state.candidates.join(',')}|${[...state.guessed].sort((a,b)=>a-b).join(',')}|${forcedKey}`;
       if (memo.has(key)) return memo.get(key);
       if (++expandedStates > maxStates) throw new Error(`HORIZON_STATE_LIMIT:${maxStates}`);
-      const total = mass(state.candidates); let best = { value: [...ZERO], action: { type: 'stop' }, optimalActions: [{ type: 'stop' }] };
+      const total = mass(state.candidates); let best = forcedAction ? null : { value: [...ZERO], action: { type: 'stop' }, optimalActions: [{ type: 'stop' }] };
       function consider(value, action) {
-        const order = compare(value, best.value);
-        if (order > 0) best = { value, action, optimalActions: [action] };
+        const order = best ? compare(value, best.value) : 1;
+        if (!best || order > 0) best = { value, action, optimalActions: [action] };
         else if (order === 0) best.optimalActions.push(action);
       }
-      if (state.hints > 0 && state.knownMask !== 63) {
+      if (state.hints > 0 && state.knownMask !== 63 && (!forcedAction || forcedAction.type === 'hint')) {
         const unknown = FIELDS.map((field,index)=>({...field,index})).filter((field)=>!(state.knownMask&field.bit));
         let value = [...ZERO];
         for (const field of unknown) {
@@ -234,6 +237,7 @@
         consider(value,{type:'hint'});
       }
       if (state.challenges > 0) for (const guessIndex of actions) {
+        if(forcedAction&&(forcedAction.type!=='challenge'||forcedAction.index!==guessIndex))continue;
         if(state.guessed.has(guessIndex))continue;
         const outcomes=new Map();
         for(const targetIndex of state.candidates){const target=cards[targetIndex],guess=cards[guessIndex],match=matchMask(target,guess),strict=strictMatchMask(target,guess),solved=isExactAnswer(target,guess);const k=`${match}|${strict}|${solved?1:0}|${match&1?target.b:''}|${match&8?target.n:''}`;if(!outcomes.has(k))outcomes.set(k,{match,strict,solved,targets:[]});outcomes.get(k).targets.push(targetIndex);}
@@ -249,7 +253,7 @@
       }
       memo.set(key,best); return best;
     }
-    const result=visit({hints:options.hints,challenges:options.challenges,candidates:[...options.candidates].sort((a,b)=>a-b),knownMask:options.knownMask||0,matchedMask:options.matchedMask||0,guessed:new Set(options.guessed||[])},maxDepth);
+    const result=visit({hints:options.hints,challenges:options.challenges,candidates:[...options.candidates].sort((a,b)=>a-b),knownMask:options.knownMask||0,matchedMask:options.matchedMask||0,guessed:new Set(options.guessed||[])},maxDepth,options.forcedAction||null);
     return {...result,expandedStates,memoStates:memo.size,depth:maxDepth,method:'restricted-horizon'};
   }
 

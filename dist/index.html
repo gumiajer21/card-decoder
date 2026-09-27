@@ -50,7 +50,7 @@
         </div>
         <div class="tab-pane" id="challengePane" hidden>
           <div class="search-block"><label class="grow"><span>本次挑战卡</span><input id="cardSearch" type="search" autocomplete="off" placeholder="输入中文或英文卡名"></label><div class="search-results" id="searchResults" hidden></div></div>
-          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><div><button id="copySelectedCard" class="quiet-btn" type="button">复制卡名</button><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div></div><div class="selected-card-facts" id="selectedCardFacts"></div><div class="challenge-card-actions"><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button><button class="quiet-btn" id="evaluateChallengeBtn" type="button">计算这张卡收益</button><button class="quiet-btn" id="compareSelectedCardBtn" type="button">加入收益对比</button></div><div id="challengeEvaluation" class="challenge-evaluation" hidden></div></div></div>
+          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><div><button id="copySelectedCard" class="quiet-btn" type="button">复制卡名</button><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div></div><div class="selected-card-facts" id="selectedCardFacts"></div><div class="challenge-card-actions"><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button><button class="quiet-btn" id="evaluateChallengeBtn" type="button">计算这张卡收益</button><button class="quiet-btn" id="compareSelectedCardBtn" type="button">加入策略对比</button></div><div id="challengeEvaluation" class="challenge-evaluation" hidden></div></div></div>
           <p class="form-help challenge-help" id="challengeHelp">选择卡片后执行挑战；测试和小游戏模式会直接生成判定。</p>
         </div>
       </div>
@@ -61,7 +61,7 @@
       <p class="mode-guide" id="modeGuide">统一比较提示与挑战；精确时给出证明，超出规模时显示严格上下界。</p>
       <div class="recommendation-card empty-state" id="recommendationCard"><div class="scan-orbit" aria-hidden="true"><i></i><i></i><i></i><span>6</span></div><img id="recommendImage" class="recommend-image" alt="" hidden><div class="recommend-heading"><button id="recommendTitle" class="recommend-title" type="button" disabled>录入初始揭示</button><button id="copyRecommendCard" class="quiet-btn" type="button" hidden>复制卡名</button></div><p id="recommendReason">加入本题已经显示的字段，求解器会筛选候选并计算推荐挑战。</p><div class="recommend-card-stats" id="recommendCardStats" hidden></div></div>
       <div class="metric-grid"><div><span>期望即时得分</span><strong id="metricPoints">—</strong></div><div><span>本次通关概率</span><strong id="metricSolve">—</strong></div><div><span>信息增益</span><strong id="metricInfo">—</strong></div></div>
-      <div class="recommend-actions"><button class="calculate-btn" id="calculateBtn" type="button">计算最佳挑战</button><button class="quiet-btn" id="compareRecommendationsBtn" type="button">收益对比</button></div>
+      <div class="recommend-actions"><button class="calculate-btn" id="calculateBtn" type="button">计算最佳挑战</button><button class="quiet-btn" id="compareRecommendationsBtn" type="button">策略价值对比</button></div>
       <div class="calc-progress" id="calcProgress" hidden><span></span><em>正在比较合法挑战…</em></div><div class="alternatives" id="alternatives"></div>
       <p class="method-note" id="methodNote">信息熵仅作解释，不再折算成奖励；边界重叠时不会宣称策略已被证明最优。</p>
     </aside>
@@ -138,11 +138,12 @@
 
   <dialog id="challengeCompareDialog" class="modal compare-modal">
     <div class="modal-card">
-      <header><div><p class="eyebrow">自选卡片</p><h2>挑战收益对比</h2></div><button id="challengeCompareCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <header><div><p class="eyebrow">强制指定第一步</p><h2>挑战策略价值对比</h2></div><button id="challengeCompareCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
       <div class="compare-search search-block"><label><span>添加对比卡</span><input id="compareCardSearch" type="search" autocomplete="off" placeholder="输入中文或英文卡名"></label><div id="compareCardResults" class="search-results" hidden></div></div>
-      <p class="modal-note">以下结果基于当前题目的候选后验和奖励设置，只计算立即挑战一次的收益，不会消耗挑战次数。</p>
+      <p class="modal-note">每张卡都被固定为第一步挑战，收到反馈后再由严格策略选择后续提示或挑战。小状态使用精确 Bellman，大状态使用与推荐相同的受限深度策略树；单步指标仅用于解释。</p>
+      <div id="comparisonProgress" class="comparison-progress" hidden>正在计算策略价值…</div>
       <div id="comparisonList" class="comparison-list"></div>
-      <footer><button id="clearComparisonBtn" class="danger-btn" type="button">清空对比</button><button id="challengeCompareDoneBtn" class="primary-btn" type="button">完成</button></footer>
+      <footer><button id="clearComparisonBtn" class="danger-btn" type="button">清空对比</button><button id="runStrategyComparisonBtn" class="quiet-btn" type="button">重新计算策略价值</button><button id="challengeCompareDoneBtn" class="primary-btn" type="button">完成</button></footer>
     </div>
   </dialog>
   <dialog id="activityDataDialog" class="modal">

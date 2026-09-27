@@ -78,6 +78,7 @@
   let feedbackMask = 0;
   let borderRevealValue = null;
   let lastRecommendations = [];
+  let lastQuickMetrics = [];
   let lastAdvice = null;
   let lastProof = null;
   let calculationToken = 0;
@@ -85,6 +86,8 @@
   let testSession = null;
   let pendingTestTarget = null;
   let comparisonIndices = [];
+  let comparisonStrategyResults = new Map();
+  let comparisonCalculationToken = 0;
   let simulationRunning = false;
   let simulationWorkers = [];
   let simulationWorkerUrl = null;
@@ -856,6 +859,7 @@
 
   function clearRecommendation() {
     lastRecommendations = [];
+    lastQuickMetrics = [];
     lastAdvice = null;
     $('#recommendationCard').classList.add('empty-state');
     $('#recommendTitle').textContent = state.known && Object.keys(state.known).length ? '等待计算' : '录入初始揭示';
@@ -1065,6 +1069,7 @@
       return;
     }
     comparisonIndices.push(value);
+    comparisonStrategyResults.delete(value);
     renderComparisonList();
   }
 
@@ -1075,27 +1080,87 @@
       return;
     }
     const rows = comparisonIndices.map((index) => evaluateChallengeAction(index)).filter(Boolean);
-    const best = {
-      points: Math.max(...rows.map((item) => item.points)),
-      solve: Math.max(...rows.map((item) => item.solve)),
-      info: Math.max(...rows.map((item) => item.info)),
-      newMatches: Math.max(...rows.map((item) => item.newMatches)),
-      remaining: Math.min(...rows.map((item) => item.remaining)),
-    };
-    const mark = (value, target) => Math.abs(value - target) < 1e-10 ? ' is-best' : '';
+    const completed = rows.map((item) => comparisonStrategyResults.get(item.index)).filter((item) => item?.value);
+    let bestStrategy = null;
+    for (const result of completed) if (!bestStrategy || compareObjectiveVectors(result.value, bestStrategy.value) > 0) bestStrategy = result;
     container.innerHTML = rows.map((item) => {
       const card = CARDS[item.index];
-      return `<article class="comparison-card"><img data-compare-image="${item.index}" alt=""><div class="comparison-main"><div class="comparison-title"><strong>${escapeHtml(card.name)}</strong><button type="button" data-remove-comparison="${item.index}" aria-label="移除">×</button></div><small>${escapeHtml(cardStats(card))}</small><div class="comparison-metrics"><span class="${mark(item.points,best.points)}"><small>期望得分</small><b>${item.points.toFixed(2)}</b></span><span class="${mark(item.solve,best.solve)}"><small>通关概率</small><b>${formatPercent(item.solve)}</b></span><span class="${mark(item.info,best.info)}"><small>信息增益</small><b>${item.info.toFixed(2)} bit</b></span><span class="${mark(item.newMatches,best.newMatches)}"><small>新增相符</small><b>${item.newMatches.toFixed(2)}</b></span><span class="${mark(item.remaining,best.remaining)}"><small>平均剩余</small><b>${item.remaining.toFixed(item.remaining < 10 ? 2 : 1)} 张</b></span><span><small>反馈分支</small><b>${item.outcomes}</b></span></div></div></article>`;
+      const strategy = comparisonStrategyResults.get(item.index);
+      const strategyHtml = strategy?.error
+        ? `<div class="strategy-summary is-error"><strong>策略计算未完成</strong><span>${escapeHtml(strategy.error)}</span></div>`
+        : strategy?.value
+        ? `<div class="strategy-summary${strategy === bestStrategy ? ' is-best' : ''}"><strong>${strategy === bestStrategy ? '当前策略价值最高' : '强制首步策略价值'}</strong><div><span><small>预期完成题数</small><b>${strategy.value[0].toFixed(4)}</b></span><span><small>预期新增相符</small><b>${strategy.value[1].toFixed(3)}</b></span><span><small>预期行动数</small><b>${(-strategy.value[2]).toFixed(3)}</b></span><span><small>计算方法</small><b>${strategy.proven ? '精确 Bellman' : `深度 ${strategy.depth} 近似`}</b></span></div><em>${strategy.proven ? '该状态下已精确求解' : `受限策略树，展开 ${Number(strategy.expandedStates || 0).toLocaleString('zh-CN')} 个状态，不宣称全局最优`}</em></div>`
+        : '<div class="strategy-summary is-pending"><strong>尚未计算策略价值</strong><span>点击下方“计算策略价值”。</span></div>';
+      return `<article class="comparison-card"><img data-compare-image="${item.index}" alt=""><div class="comparison-main"><div class="comparison-title"><strong>${escapeHtml(card.name)}</strong><button type="button" data-remove-comparison="${item.index}" aria-label="移除">×</button></div><small>${escapeHtml(cardStats(card))}</small>${strategyHtml}<div class="comparison-metrics"><span><small>单步期望得分</small><b>${item.points.toFixed(2)}</b></span><span><small>直接通关概率</small><b>${formatPercent(item.solve)}</b></span><span><small>单步信息增益</small><b>${item.info.toFixed(2)} bit</b></span><span><small>单步新增相符</small><b>${item.newMatches.toFixed(2)}</b></span><span><small>反馈后平均剩余</small><b>${item.remaining.toFixed(item.remaining < 10 ? 2 : 1)} 张</b></span><span><small>反馈分支</small><b>${item.outcomes}</b></span></div></div></article>`;
     }).join('');
     $$('[data-compare-image]').forEach((image) => setCardImage(image, CARDS[Number(image.dataset.compareImage)], true, 'card-back.png'));
   }
 
-  function openChallengeComparison(seed = []) {
+  async function openChallengeComparison(seed = []) {
     seed.forEach((index) => addComparisonCard(index, { quiet: true }));
     $('#compareCardSearch').value = '';
     $('#compareCardResults').hidden = true;
     renderComparisonList();
     $('#challengeCompareDialog').showModal();
+    await runStrategyComparison();
+  }
+
+  function forcedStrategyValue(index, alreadyGuessed) {
+    if (alreadyGuessed.has(index)) return { error: '同一题重复挑战不会消耗次数或产生新反馈。' };
+    const knownMask = FIELDS.reduce((mask, field) => mask | (state.known[field.key] ? field.bit : 0), 0);
+    const weights = CARDS.map((card) => weightOf(card));
+    const forcedAction = { type: 'challenge', index };
+    const finalPuzzle = state.puzzle === state.config.puzzles;
+    if (finalPuzzle && candidateCache.length <= 7 && state.hints <= 4 && state.challenges <= 6) {
+      const actions = [...new Set([index, ...exactActionRepresentatives(candidateCache, alreadyGuessed)])];
+      try {
+        const result = window.DecoderSolver.solveExact({ cards:CARDS, weights, universe:candidateCache, actions, forcedAction,
+          config:{...state.config,puzzles:state.puzzle}, puzzle:state.puzzle, hints:state.hints, challenges:state.challenges,
+          candidates:candidateCache, knownMask, matchedMask:state.matchedMask, guessed:[...alreadyGuessed], maxStates:160000 });
+        return { ...result, proven:true, depth:'完整', method:'exact-bellman' };
+      } catch (error) {
+        if (!String(error.message).startsWith('EXACT_STATE_LIMIT:')) console.error(error);
+      }
+    }
+    if (!lastQuickMetrics.length) return { error:'请先完成一次推荐计算，以建立一致的后续行动集合。' };
+    const actions = restrictedActionSet(candidateCache, lastQuickMetrics, comparisonIndices);
+    const base = { cards:CARDS, weights, actions, forcedAction, hints:state.hints, challenges:state.challenges,
+      candidates:candidateCache, knownMask, matchedMask:state.matchedMask, guessed:[...alreadyGuessed], maxStates:30000,
+      remainingPuzzles:state.config.puzzles-state.puzzle+1, resourceModel:{hintChallengeRatio:.61,equivalentCostPerSolve:3.9} };
+    for (const depth of [3,2]) {
+      try { return { ...window.DecoderSolver.solveRestrictedHorizon({...base,depth}), proven:false }; }
+      catch (error) { if (!String(error.message).startsWith('HORIZON_STATE_LIMIT:')) return { error:error.message }; }
+    }
+    return { error:'策略树超过计算预算，请减少对比卡或在候选更少时重试。' };
+  }
+
+  async function runStrategyComparison() {
+    if (!comparisonIndices.length || state.challenges <= 0 || !candidateCache.length) return;
+    const token = ++comparisonCalculationToken;
+    const progress = $('#comparisonProgress');
+    const button = $('#runStrategyComparisonBtn');
+    progress.hidden = false;
+    button.disabled = true;
+    if (!lastQuickMetrics.length) {
+      progress.textContent = '正在准备与严格推荐一致的后续行动集合…';
+      await calculateRecommendations();
+      if (token !== comparisonCalculationToken) return;
+    }
+    const alreadyGuessed = new Set(state.logs.filter((log) => log.type === 'challenge').map((log) => log.guess));
+    comparisonStrategyResults = new Map();
+    for (let position = 0; position < comparisonIndices.length; position += 1) {
+      const index = comparisonIndices[position];
+      progress.textContent = `正在计算 ${position + 1} / ${comparisonIndices.length}：${CARDS[index].name}`;
+      await nextFrame();
+      if (token !== comparisonCalculationToken) return;
+      const result = forcedStrategyValue(index, alreadyGuessed);
+      if (token !== comparisonCalculationToken) return;
+      comparisonStrategyResults.set(index, result);
+      renderComparisonList();
+    }
+    progress.hidden = true;
+    button.disabled = false;
+    button.textContent = '重新计算策略价值';
   }
 
   function showComparisonSearchResults() {
@@ -1249,6 +1314,7 @@
     }
 
     quick.sort((a, b) => mode === 'balanced' ? compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)) : b.score - a.score);
+    lastQuickMetrics = quick;
     // Always refine the most likely direct candidate guesses. In the old version, a certain
     // answer could fall outside the 300-card information shortlist when all remaining rewards
     // were already earned, which caused the reported one-candidate failure.
@@ -1443,14 +1509,19 @@
     }
   }
 
-  function tryRestrictedPolicy(candidates, alreadyGuessed, quick) {
-    if (!window.DecoderSolver?.solveRestrictedHorizon || !quick.length) return null;
-    const selected = new Set();
-    quick.slice(0, 18).forEach((item) => selected.add(item.index));
+  function restrictedActionSet(candidates, quick, extras = []) {
+    const selected = new Set(extras);
+    [...quick].sort((a, b) => compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a))).slice(0, 18).forEach((item) => selected.add(item.index));
     [...quick].sort((a, b) => b.infoApprox - a.infoApprox).slice(0, 8).forEach((item) => selected.add(item.index));
     [...candidates].sort((a, b) => weightOf(CARDS[b]) - weightOf(CARDS[a])).slice(0, 8).forEach((index) => selected.add(index));
+    return [...selected];
+  }
+
+  function tryRestrictedPolicy(candidates, alreadyGuessed, quick) {
+    if (!window.DecoderSolver?.solveRestrictedHorizon || !quick.length) return null;
+    const selected = restrictedActionSet(candidates, quick);
     const knownMask = FIELDS.reduce((mask, field) => mask | (state.known[field.key] ? field.bit : 0), 0);
-    const base = { cards: CARDS, weights: CARDS.map((card) => weightOf(card)), actions: [...selected],
+    const base = { cards: CARDS, weights: CARDS.map((card) => weightOf(card)), actions: selected,
       hints: state.hints, challenges: state.challenges, candidates, knownMask, matchedMask: state.matchedMask,
       guessed: [...alreadyGuessed], maxStates: 24000, remainingPuzzles: state.config.puzzles - state.puzzle + 1,
       resourceModel: { hintChallengeRatio: .61, equivalentCostPerSolve: 3.9 } };
@@ -2359,7 +2430,8 @@
     $('#testSetupForm').addEventListener('submit', (event) => { event.preventDefault(); try { applyTestSetup(); } catch (error) { toast(error.message); } });
     $('#challengeCompareCloseBtn').addEventListener('click', () => $('#challengeCompareDialog').close());
     $('#challengeCompareDoneBtn').addEventListener('click', () => $('#challengeCompareDialog').close());
-    $('#clearComparisonBtn').addEventListener('click', () => { comparisonIndices = []; renderComparisonList(); });
+    $('#clearComparisonBtn').addEventListener('click', () => { comparisonCalculationToken += 1; comparisonIndices = []; comparisonStrategyResults = new Map(); $('#comparisonProgress').hidden = true; $('#runStrategyComparisonBtn').disabled = false; renderComparisonList(); });
+    $('#runStrategyComparisonBtn').addEventListener('click', runStrategyComparison);
     $('#compareCardSearch').addEventListener('input', showComparisonSearchResults);
     $('#compareCardResults').addEventListener('click', (event) => {
       const button = event.target.closest('[data-compare-card-index]');
@@ -2367,11 +2439,17 @@
       addComparisonCard(Number(button.dataset.compareCardIndex));
       $('#compareCardSearch').value = '';
       $('#compareCardResults').hidden = true;
+      runStrategyComparison();
     });
     $('#comparisonList').addEventListener('click', (event) => {
       const button = event.target.closest('[data-remove-comparison]');
       if (!button) return;
-      comparisonIndices = comparisonIndices.filter((index) => index !== Number(button.dataset.removeComparison));
+      comparisonCalculationToken += 1;
+      const removed = Number(button.dataset.removeComparison);
+      comparisonIndices = comparisonIndices.filter((index) => index !== removed);
+      comparisonStrategyResults.delete(removed);
+      $('#comparisonProgress').hidden = true;
+      $('#runStrategyComparisonBtn').disabled = false;
       renderComparisonList();
     });
     $('#newTestTargetBtn').addEventListener('click', newTestTarget);
