@@ -83,6 +83,7 @@
   let calculationToken = 0;
   let toastTimer = null;
   let testSession = null;
+  let pendingTestTarget = null;
   let simulationRunning = false;
   let simulationWorkers = [];
   let simulationWorkerUrl = null;
@@ -956,6 +957,8 @@
     $('#selectedCardName').textContent = card.name;
     $('#copySelectedCard').dataset.cardIndex = String(selectedGuess);
     $('#selectedCardFacts').innerHTML = FIELDS.map((field) => `<div><span>${escapeHtml(field.label)}</span><strong>${escapeHtml(formatValue(field.key, fieldValue(card, field.key)))}</strong></div>`).join('');
+    $('#challengeEvaluation').hidden = true;
+    $('#challengeEvaluation').innerHTML = '';
     setCardImage($('#selectedCardImage'), card);
     renderTestMode();
   }
@@ -967,6 +970,8 @@
     $('#cardSearch').value = '';
     $('#selectedCard').hidden = true;
     $('#selectedCardImage').hidden = true;
+    $('#challengeEvaluation').hidden = true;
+    $('#challengeEvaluation').innerHTML = '';
     $('#feedbackGrid').innerHTML = '';
     $('#specialReveals').hidden = true;
     renderTestMode();
@@ -985,6 +990,66 @@
     if (borderOn) { populateBorderRevealChoices(); $('#feedbackNote').textContent = '请选择游戏画面实际揭示的完整目标边框。'; }
     else $('#feedbackNote').textContent = '勾选游戏中亮起的项目；测试和小游戏模式会自动生成判定。';
     if (numberOn) populateSpecialReveal('number');
+  }
+
+  function evaluateChallengeAction(guessIndex, candidates = candidateCache) {
+    const guess = CARDS[Number(guessIndex)];
+    const total = candidateMass(candidates);
+    if (!guess || total <= 0) return null;
+    const oldMask = state.matchedMask;
+    const oldCount = popcount(oldMask);
+    let immediateSum = 0;
+    let solveMass = 0;
+    let newMatchesSum = 0;
+    const outcomes = new Map();
+    for (const targetIndex of candidates) {
+      const target = CARDS[targetIndex];
+      const weight = weightOf(target);
+      const mask = matchMask(target, guess);
+      const strictMask = strictMatchMask(target, guess);
+      const newMask = oldMask | strictMask;
+      let gain = thresholdGain(oldMask, newMask);
+      if (isExactAnswer(target, guess)) { gain += solveReward(); solveMass += weight; }
+      immediateSum += gain * weight;
+      newMatchesSum += (popcount(newMask) - oldCount) * weight;
+      const borderPart = mask & 1 ? target.b : 0;
+      const numberPart = mask & 8 ? target.n + 1 : 0;
+      const key = mask | (borderPart << 6) | (numberPart << 14);
+      outcomes.set(key, (outcomes.get(key) || 0) + weight);
+    }
+    let info = 0;
+    let expectedRemaining = 0;
+    for (const mass of outcomes.values()) {
+      const probability = mass / total;
+      info -= probability * Math.log2(probability);
+      expectedRemaining += probability * mass;
+    }
+    return {
+      index: Number(guessIndex),
+      points: immediateSum / total,
+      solve: solveMass / total,
+      newMatches: newMatchesSum / total,
+      info,
+      remaining: expectedRemaining,
+      outcomes: outcomes.size,
+      total,
+    };
+  }
+
+  async function calculateSelectedChallenge() {
+    if (selectedGuess == null) { toast('请先选择一张挑战卡。'); return; }
+    if (!candidateCache.length) { toast('当前没有可分析的候选卡。'); return; }
+    const button = $('#evaluateChallengeBtn');
+    button.disabled = true;
+    button.textContent = '计算中…';
+    await nextFrame();
+    const result = evaluateChallengeAction(selectedGuess);
+    button.disabled = false;
+    button.textContent = '重新计算收益';
+    if (!result) return;
+    const element = $('#challengeEvaluation');
+    element.hidden = false;
+    element.innerHTML = `<div><span>期望即时得分</span><strong>${result.points.toFixed(2)}</strong></div><div><span>直接通关概率</span><strong>${formatPercent(result.solve)}</strong></div><div><span>信息增益</span><strong>${result.info.toFixed(2)} bit</strong></div><div><span>期望新增相符项</span><strong>${result.newMatches.toFixed(2)}</strong></div><div><span>反馈后平均剩余</span><strong>${result.remaining.toFixed(result.remaining < 10 ? 2 : 1)} 张</strong></div><div><span>可能反馈分支</span><strong>${result.outcomes}</strong></div>`;
   }
 
   function populateBorderRevealChoices() {
@@ -1598,25 +1663,82 @@
     return CARDS.length - 1;
   }
 
-  function startSession(mode) {
+  function startSession(mode, options = {}) {
     if (testSession) return;
-    testSession = { realState: clone(state), targetIndex: randomWeightedIndex(state.pool), mode, revealed: false };
+    const requestedTarget = Number(options.targetIndex);
+    const targetIndex = Number.isInteger(requestedTarget) && requestedTarget >= 0 && requestedTarget < CARDS.length && weightOf(CARDS[requestedTarget]) > 0
+      ? requestedTarget
+      : randomWeightedIndex(state.pool);
+    testSession = { realState: clone(state), targetIndex, mode, revealed: false, initialField: options.initialField || 'random' };
     const pool = state.pool;
     state = freshState(state.config);
     state.pool = pool;
     state.presetId = testSession.realState.presetId;
-    seedTestInitialReveal();
+    seedTestInitialReveal(testSession.initialField);
     undoStack = [];
     render();
     toast(`${mode === 'game' ? '小游戏' : '测试'}模式已开始；退出后会恢复原活动进度。`);
   }
 
-  function startTestMode() { startSession('test'); }
+  function openTestSetup() {
+    pendingTestTarget = testSession?.mode === 'test' ? testSession.targetIndex : null;
+    $('#testTargetMode').value = pendingTestTarget == null ? 'random' : 'specific';
+    $('#testInitialField').value = testSession?.initialField || 'random';
+    $('#testTargetSearch').value = pendingTestTarget == null ? '' : CARDS[pendingTestTarget].name;
+    renderTestTargetPicker();
+    $('#testSetupDialog').showModal();
+  }
+
+  function renderTestTargetPicker() {
+    const specific = $('#testTargetMode').value === 'specific';
+    $('#testTargetPicker').hidden = !specific;
+    const selected = $('#testTargetSelected');
+    selected.hidden = !specific || pendingTestTarget == null;
+    selected.innerHTML = pendingTestTarget == null ? '' : `<span>已选择目标</span><strong>${escapeHtml(CARDS[pendingTestTarget].name)}</strong><small>${escapeHtml(cardStats(CARDS[pendingTestTarget]))}</small>`;
+    if (!specific) $('#testTargetResults').innerHTML = '';
+  }
+
+  function showTestTargetResults() {
+    const query = $('#testTargetSearch').value.trim();
+    const container = $('#testTargetResults');
+    if (!query) { container.innerHTML = ''; return; }
+    const results = searchCards(query);
+    container.innerHTML = results.length
+      ? results.slice(0, 12).map((index) => `<button class="search-result" type="button" data-test-target-index="${index}"><span><strong>${escapeHtml(CARDS[index].name)}</strong><small>${escapeHtml(cardStats(CARDS[index]))}</small></span><small>${weightOf(CARDS[index])}张同组</small></button>`).join('')
+      : '<div class="empty-inline">没有找到卡名</div>';
+  }
+
+  function applyTestSetup() {
+    const specific = $('#testTargetMode').value === 'specific';
+    if (specific && pendingTestTarget == null) throw new Error('请先搜索并选择一张目标卡。');
+    const options = { targetIndex: specific ? pendingTestTarget : undefined, initialField: $('#testInitialField').value };
+    $('#testSetupDialog').close();
+    if (testSession?.mode === 'test') {
+      const pool = state.pool;
+      const config = state.config;
+      const presetId = state.presetId;
+      testSession.targetIndex = specific ? pendingTestTarget : randomWeightedIndex(pool);
+      testSession.initialField = options.initialField;
+      testSession.revealed = false;
+      state = freshState(config);
+      state.pool = pool;
+      state.presetId = presetId;
+      seedTestInitialReveal(testSession.initialField);
+      undoStack = [];
+      clearGuess();
+      render();
+      toast('已按指定设置更换测试目标。');
+      return;
+    }
+    startSession('test', options);
+  }
+
+  function startTestMode() { openTestSetup(); }
   function startGameMode() { startSession('game'); }
 
-  function seedTestInitialReveal() {
+  function seedTestInitialReveal(fieldKey = 'random') {
     const target = CARDS[testSession.targetIndex];
-    const field = FIELDS[Math.floor(Math.random() * FIELDS.length)];
+    const field = FIELDS.find((item) => item.key === fieldKey) || FIELDS[Math.floor(Math.random() * FIELDS.length)];
     const value = fieldValue(target, field.key);
     state.known[field.key] = { value, source: 'initial' };
     state.initialUsed = true;
@@ -1627,6 +1749,7 @@
 
   function newTestTarget() {
     if (!testSession) return;
+    if (testSession.mode === 'test') { openTestSetup(); return; }
     const pool = state.pool;
     const config = state.config;
     const presetId = state.presetId;
@@ -1635,7 +1758,7 @@
     state = freshState(config);
     state.pool = pool;
     state.presetId = presetId;
-    seedTestInitialReveal();
+    seedTestInitialReveal('random');
     undoStack = [];
     clearGuess();
     render();
@@ -2011,6 +2134,7 @@
     });
     $('#clearSelectedCard').addEventListener('click', clearGuess);
     $('#copySelectedCard').addEventListener('click', () => copyCardName(CARDS[Number($('#copySelectedCard').dataset.cardIndex)]));
+    $('#evaluateChallengeBtn').addEventListener('click', calculateSelectedChallenge);
     $('#feedbackGrid').addEventListener('click', (event) => {
       const button = event.target.closest('[data-feedback-bit]');
       if (!button) return;
@@ -2108,7 +2232,7 @@
       state.activityHistory = (state.activityHistory || []).filter((item) => item.puzzle !== state.puzzle || item.activityId !== state.activityId);
       resetPuzzle(false);
       syncCurrentActivityHistory();
-      if (testSession) seedTestInitialReveal();
+      if (testSession) seedTestInitialReveal(testSession.initialField || 'random');
       render();
     });
     $('#resetEventBtn').addEventListener('click', () => {
@@ -2123,7 +2247,7 @@
     $('#nextPuzzleBtn').addEventListener('click', () => {
       if (state.puzzle >= state.config.puzzles) { $('#solvedBanner').hidden = true; toast(`活动完成：高价值 ${state.premiumScore}，后段匹配 ${state.progressScore}。`); return; }
       pushUndo(); state.puzzle += 1; resetPuzzle(true);
-      if (testSession) { testSession.targetIndex = randomWeightedIndex(state.pool); testSession.revealed = false; seedTestInitialReveal(); }
+      if (testSession) { testSession.targetIndex = randomWeightedIndex(state.pool); testSession.revealed = false; seedTestInitialReveal(testSession.initialField || 'random'); }
       render();
     });
     $('#settingsBtn').addEventListener('click', openSettings);
@@ -2156,6 +2280,19 @@
     $('#settingsForm').addEventListener('submit', (event) => { event.preventDefault(); applySettings(); });
     $('#testModeBtn').addEventListener('click', startTestMode);
     $('#gameModeBtn').addEventListener('click', startGameMode);
+    $('#testSetupCloseBtn').addEventListener('click', () => $('#testSetupDialog').close());
+    $('#testSetupCancelBtn').addEventListener('click', () => $('#testSetupDialog').close());
+    $('#testTargetMode').addEventListener('change', () => { if ($('#testTargetMode').value === 'random') pendingTestTarget = null; renderTestTargetPicker(); });
+    $('#testTargetSearch').addEventListener('input', () => { pendingTestTarget = null; renderTestTargetPicker(); showTestTargetResults(); });
+    $('#testTargetResults').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-test-target-index]');
+      if (!button) return;
+      pendingTestTarget = Number(button.dataset.testTargetIndex);
+      $('#testTargetSearch').value = CARDS[pendingTestTarget].name;
+      $('#testTargetResults').innerHTML = '';
+      renderTestTargetPicker();
+    });
+    $('#testSetupForm').addEventListener('submit', (event) => { event.preventDefault(); try { applyTestSetup(); } catch (error) { toast(error.message); } });
     $('#newTestTargetBtn').addEventListener('click', newTestTarget);
     $('#exitTestBtn').addEventListener('click', exitTestMode);
     $('#revealTargetBtn').addEventListener('click', revealSessionTarget);

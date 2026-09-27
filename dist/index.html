@@ -50,7 +50,7 @@
         </div>
         <div class="tab-pane" id="challengePane" hidden>
           <div class="search-block"><label class="grow"><span>本次挑战卡</span><input id="cardSearch" type="search" autocomplete="off" placeholder="输入中文或英文卡名"></label><div class="search-results" id="searchResults" hidden></div></div>
-          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><div><button id="copySelectedCard" class="quiet-btn" type="button">复制卡名</button><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div></div><div class="selected-card-facts" id="selectedCardFacts"></div><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button></div></div>
+          <div class="selected-card" id="selectedCard" hidden><img id="selectedCardImage" class="card-art" alt="" hidden><div class="grow"><div class="selected-card-heading"><div><span>当前挑战卡</span><strong id="selectedCardName"></strong></div><div><button id="copySelectedCard" class="quiet-btn" type="button">复制卡名</button><button id="clearSelectedCard" class="icon-btn" type="button" aria-label="清除选择">×</button></div></div><div class="selected-card-facts" id="selectedCardFacts"></div><div class="challenge-card-actions"><button class="primary-btn challenge-submit" id="recordChallengeBtn" type="button">使用这张卡挑战</button><button class="quiet-btn" id="evaluateChallengeBtn" type="button">计算这张卡收益</button></div><div id="challengeEvaluation" class="challenge-evaluation" hidden></div></div></div>
           <p class="form-help challenge-help" id="challengeHelp">选择卡片后执行挑战；测试和小游戏模式会直接生成判定。</p>
         </div>
       </div>
@@ -118,6 +118,23 @@
       <footer><button id="clearArchiveBtn" class="danger-btn" type="button">清除旧活动档案</button><button id="exportActivityBtn" class="quiet-btn" type="button">导出当前活动</button><button id="importActivityBtn" class="quiet-btn" type="button">导入活动记录</button><button id="historyDoneBtn" class="primary-btn" type="button">完成</button></footer>
     </div>
   </dialog>
+
+  <dialog id="testSetupDialog" class="modal">
+    <form method="dialog" class="modal-card" id="testSetupForm">
+      <header><div><p class="eyebrow">可控验证</p><h2>测试模式设置</h2></div><button id="testSetupCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header>
+      <div class="settings-grid compact-grid">
+        <label><span>目标卡</span><select id="testTargetMode"><option value="random">随机选择</option><option value="specific">指定卡片</option></select></label>
+        <label><span>初始揭示</span><select id="testInitialField"><option value="random">随机字段</option><option value="border">卡片边框</option><option value="attribute">属性</option><option value="race">种族</option><option value="number">等级／阶级／连接</option><option value="attack">攻击力</option><option value="defense">守备力</option></select></label>
+      </div>
+      <div id="testTargetPicker" class="test-target-picker" hidden>
+        <label><span>搜索目标卡名</span><input id="testTargetSearch" type="search" autocomplete="off" placeholder="输入中文或英文卡名"></label>
+        <div id="testTargetResults" class="test-target-results"></div>
+        <div id="testTargetSelected" class="test-target-selected" hidden></div>
+      </div>
+      <p class="modal-note">目标卡会在测试模式中公开；初始揭示只决定开局显示哪一项，不额外消耗提示。</p>
+      <footer><button id="testSetupCancelBtn" class="quiet-btn" type="button">取消</button><button class="primary-btn" type="submit">开始测试</button></footer>
+    </form>
+  </dialog>
   <dialog id="activityDataDialog" class="modal">
     <div class="modal-card compact-modal"><header><div><p class="eyebrow">活动存档</p><h2>导入／导出活动</h2></div><button id="activityDataCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header><div class="archive-actions"><button id="prominentExportBtn" class="primary-btn" type="button">导出当前活动</button><button id="prominentImportBtn" class="quiet-btn" type="button">导入 JSON／文本记录</button><button id="manualImportBtn" class="quiet-btn" type="button">逐项补录行动</button></div><p class="modal-note">浏览器通常会自动保存本机进度；这里用于换设备、换浏览器，或根据游戏画面重新补录。</p></div>
   </dialog>
@@ -140,7 +157,7 @@
       <footer><button id="faqDoneBtn" class="primary-btn" type="button">完成</button></footer>
     </div>
   </dialog>
-  <dialog id="changelogDialog" class="modal"><div class="modal-card info-card"><header><div><p class="eyebrow">项目沿革</p><h2>原始版本与更新记录</h2></div><button id="changelogCloseBtn" class="icon-btn" type="button">×</button></header><section class="origin-note"><h3>原始版本 · 2026-09-24</h3><p>从活动规则出发，将提示和挑战抽象为有限资源决策问题，并逐步加入数据库、测试与规模模拟。</p></section><div class="changelog-list"><article><time>2026-09-27</time><div><h3>灵摆判定与交互完善</h3><p>拆分相符项与整卡通关，修复行动剪枝、提示显示和活动记录。</p></div></article><article><time>2026-09-25</time><div><h3>模型与测试升级</h3><p>统一比较提示与挑战，加入有限层级求解和并行规模测试。</p></div></article></div><footer><button id="changelogDoneBtn" class="primary-btn" type="button">完成</button></footer></div></dialog>
+  <dialog id="changelogDialog" class="modal"><div class="modal-card info-card"><header><div><p class="eyebrow">项目沿革</p><h2>原始版本与更新记录</h2></div><button id="changelogCloseBtn" class="icon-btn" type="button">×</button></header><section class="origin-note"><h3>原始版本 · 2026-09-24</h3><p>从活动规则出发，将提示和挑战抽象为有限资源决策问题，并逐步加入数据库、测试与规模模拟。</p></section><div class="changelog-list"><article><time>2026-09-27</time><div><h3>测试与分析工具扩展</h3><p>支持指定测试目标与初始揭示，并可单独计算任意挑战卡的收益指标。</p></div></article><article><time>2026-09-27</time><div><h3>灵摆判定与交互完善</h3><p>拆分相符项与整卡通关，修复行动剪枝、提示显示和活动记录。</p></div></article><article><time>2026-09-25</time><div><h3>模型与测试升级</h3><p>统一比较提示与挑战，加入有限层级求解和并行规模测试。</p></div></article></div><footer><button id="changelogDoneBtn" class="primary-btn" type="button">完成</button></footer></div></dialog>
   <dialog id="manualImportDialog" class="modal">
     <form method="dialog" class="modal-card" id="manualImportForm"><header><div><p class="eyebrow">逐项询问</p><h2>补录活动行动</h2></div><button id="manualImportCloseBtn" class="icon-btn" type="button" aria-label="关闭">×</button></header><div class="settings-grid compact-grid"><label><span>题号</span><input id="manualPuzzle" type="number" min="1" value="1"></label><label><span>行动</span><select id="manualAction"><option value="初始">初始揭示</option><option value="提示">提示</option><option value="挑战">挑战</option></select></label></div><div id="manualRevealFields" class="settings-grid compact-grid"><label><span>字段</span><select id="manualField"></select></label><label><span>结果</span><select id="manualValue"></select></label></div><div id="manualChallengeFields" hidden><label class="wide"><span>挑战卡名</span><input id="manualCardName" type="search" placeholder="输入完整中文或英文卡名"></label><div id="manualMatchFields" class="manual-match-grid"></div><label id="manualPendulumExactWrap" class="pendulum-check" hidden><input id="manualPendulumExact" type="checkbox" checked><span><b>边框严格相符</b><small>挑战卡含灵摆时，根据游戏最终判定选择。</small></span></label><label id="manualNumberWrap" hidden><span>游戏显示的等级／阶级／连接</span><input id="manualNumberValue" type="number" min="0" max="13"></label></div><div class="manual-records"><div class="subheading"><h3>已补录</h3><span id="manualRecordCount">0 条</span></div><div id="manualRecordList" class="history-list"><div class="empty-inline">尚未添加行动。</div></div></div><footer><button id="manualImportCancelBtn" class="quiet-btn" type="button">取消</button><button id="manualAddBtn" class="quiet-btn" type="button">添加并继续</button><button class="primary-btn" type="submit">应用全部记录</button></footer></form>
   </dialog>

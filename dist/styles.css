@@ -175,6 +175,13 @@ select:focus, input:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba
 .selected-card-facts span { display: block; color: var(--muted); font-size: .68rem; }
 .selected-card-facts strong { display: block; margin-top: 5px; overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .challenge-submit { min-width: 190px; margin-top: 12px; }
+.challenge-card-actions { display:flex; align-items:center; flex-wrap:wrap; gap:9px; margin-top:12px; }
+.challenge-card-actions .challenge-submit { margin-top:0; }
+.challenge-evaluation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-top:11px; }
+.challenge-evaluation div { padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:rgba(7,16,31,.38); }
+.challenge-evaluation span,.challenge-evaluation strong { display:block; }
+.challenge-evaluation span { color:var(--muted); font-size:.66rem; }
+.challenge-evaluation strong { margin-top:4px; color:var(--sky); font-size:.86rem; }
 .challenge-help { margin-top: 10px; }
 .icon-btn { width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: rgba(7,16,31,.7); color: var(--muted); font-size: 1.1rem; }
 .feedback-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 11px; }
@@ -336,6 +343,13 @@ html[data-theme="light"] .pool-caveat { color: #76570c; background: rgba(245,188
 .card-art[data-zoomable="true"]:hover, .recommend-image[data-zoomable="true"]:hover { transform: translateY(-2px); box-shadow: 0 17px 38px rgba(0,0,0,.38); }
 .test-actions { display: grid; grid-template-columns: 1fr; align-content: center; gap: 9px; }
 .test-actions button { width: 100%; min-height: 46px; font-size: .84rem; }
+.test-target-picker { position:relative; margin-top:14px; padding:13px; border:1px solid var(--line); border-radius:10px; background:rgba(4,10,20,.34); }
+.test-target-picker label { display:grid; gap:6px; }
+.test-target-results { max-height:270px; margin-top:7px; overflow:auto; border-radius:9px; }
+.test-target-results:empty { display:none; }
+.test-target-selected { display:grid; gap:3px; margin-top:9px; padding:10px 12px; border:1px solid var(--line-strong); border-radius:9px; background:rgba(20,184,166,.08); }
+.test-target-selected span,.test-target-selected small { color:var(--muted); font-size:.68rem; }
+.test-target-selected strong { color:var(--sky); }
 .feedback-modal { width: min(760px,calc(100% - 24px)); }
 
 .modal { width: min(720px, calc(100% - 24px)); max-height: calc(100vh - 30px); padding: 0; overflow: auto; border: 1px solid var(--line-strong); border-radius: 16px; color: var(--text); background: #081525; box-shadow: 0 28px 90px rgba(0,0,0,.72); }
@@ -499,7 +513,8 @@ html[data-theme="light"] .side-wallpaper { opacity: .28; filter: saturate(.82) c
 html[data-theme="light"] .selected-card-facts div,
 html[data-theme="light"] .alternative-metrics > span,
 html[data-theme="light"] .history-summary div,
-html[data-theme="light"] .history-symbol { background: rgba(255,255,255,.72); }
+html[data-theme="light"] .history-symbol,
+html[data-theme="light"] .challenge-evaluation div { background: rgba(255,255,255,.72); }
 html[data-theme="light"] .history-timeline .history-item { background: rgba(246,250,252,.94); }
 html[data-theme="light"] .danger-btn { color: var(--danger); }
 html[data-theme="light"] .search-result:hover,
@@ -564,6 +579,8 @@ html[data-theme="light"] .manual-match-grid label {
 html[data-theme="light"] .faq-list summary { color:#18364a; }
 html[data-theme="light"] .origin-note { border-color:rgba(8,145,135,.3); background:#f2faf9; }
 html[data-theme="light"] .simulation-live { border-color:rgba(8,145,135,.28); background:rgba(15,159,149,.07); }
+html[data-theme="light"] .test-target-picker { background:#f4f8fa; }
+html[data-theme="light"] .test-target-selected { background:#edf8f6; }
 html[data-theme="light"] .simulation-workers b,
 html[data-theme="light"] .history-match-chips span { color:#08756f; }
 html[data-theme="light"] .history-match-chips span { background:rgba(15,159,149,.10); }
