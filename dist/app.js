@@ -1255,31 +1255,6 @@
     toast(solvedNow ? `本题完成，获得 ${delta} 分。` : delta ? `记录成功，本次获得 ${delta} 分。` : '记录成功，候选集已更新。');
   }
 
-  function firstActionReferenceDecision(mode) {
-    const reference = window.FIRST_ACTION_REFERENCE;
-    if (mode !== 'balanced' || !reference?.states || state.pool !== 'md'
-      || state.matchedMask !== 0 || state.logs.length !== 1) return null;
-    const known = Object.entries(state.known);
-    if (known.length !== 1 || known[0][1]?.source !== 'initial') return null;
-    const [fieldKey, reveal] = known[0];
-    const key = `${fieldKey}:${Number(reveal.value)}`;
-    const entry = reference.states[key];
-    if (!entry?.best || entry.status !== 'complete') return null;
-    const rootActionValues = (entry.topActions || []).map((action) => ({
-      action: { type: action.type, index: action.index ?? undefined }, value: action.value,
-    }));
-    const canonical = reference.canonical || {};
-    const canonicalContext = state.puzzle === 1 && state.hints === canonical.hints && state.challenges === canonical.challenges
-      && state.config.puzzles === canonical.puzzles && state.config.totalHints === canonical.hints && state.config.totalChallenges === canonical.challenges;
-    return {
-      action: { type: entry.best.type, index: entry.best.index ?? undefined }, value: entry.best.value,
-      rootActionValues, expandedStates: entry.expandedStates, depth: reference.canonical?.depth || 3,
-      method: 'first-action-reference', proven: false, enhanced: false, actionCount: entry.coverage?.totalActions || 0,
-      coverageInfo: entry.coverage, canonicalContext,
-      seedIndexes: rootActionValues.filter((item) => item.action.type === 'challenge').map((item) => item.action.index),
-    };
-  }
-
   async function calculateRecommendations() {
     if (!candidateCache.length || state.challenges <= 0 || state.solved) return null;
     const token = ++calculationToken;
@@ -1383,20 +1358,10 @@
       }
     }
     finalists.sort((a, b) => mode === 'balanced' ? compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)) : b.score - a.score);
-    const referenceDecision = firstActionReferenceDecision(mode);
-    // This is a user preference rather than a hidden override: the reference
-    // can be preferred on later puzzles too, or turned off for a fully live
-    // resource-aware calculation.
-    const referenceEnabled = Boolean(referenceDecision && $('#referencePriorityToggle').checked);
-    // A stored root action was evaluated for the canonical opening state. It
-    // may be used directly only there. Later puzzles and altered inventories
-    // keep the reference cards as search seeds, while the live solver still
-    // compares hint versus challenge with the actual remaining resources.
-    const useReferenceDirect = Boolean(referenceEnabled && referenceDecision.canonicalContext);
-    const exactDecision = mode === 'balanced' && !useReferenceDirect ? tryExactBellman(candidates, alreadyGuessed) : null;
-    const restrictedDecision = mode === 'balanced' && !useReferenceDirect && !exactDecision
-      ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, referenceEnabled ? referenceDecision.seedIndexes : []) : null;
-    const policyDecision = useReferenceDirect ? referenceDecision : (exactDecision || restrictedDecision);
+    const exactDecision = mode === 'balanced' ? tryExactBellman(candidates, alreadyGuessed) : null;
+    const restrictedDecision = mode === 'balanced' && !exactDecision
+      ? tryRestrictedPolicy(candidates, alreadyGuessed, quick) : null;
+    const policyDecision = exactDecision || restrictedDecision;
     lastProof = policyDecision || (mode === 'balanced' ? boundedCertificate(quick) : null);
     if (policyDecision?.action?.type === 'challenge') {
       let exactItem = finalists.find((item) => item.index === policyDecision.action.index);
@@ -1419,9 +1384,7 @@
       const tiedCandidates = [...new Set((policyDecision.optimalActions || []).filter((action) => action.type === 'challenge' && candidateSet.has(action.index)).map((action) => action.index))];
       if (tiedCandidates.length > 1) advice.equivalentChoices = tiedCandidates;
     }
-    if (useReferenceDirect) advice.reason = `已优先采用离线第一猜参考库：提示与挑战在同一棵深度 ${referenceDecision.depth} 的自适应策略树中比较。该初始揭示状态已离线展开 ${referenceDecision.expandedStates.toLocaleString('zh-CN')} 个状态；大候选状态使用已声明的覆盖挑战集合。`;
-    else if (referenceDecision) advice.reason = `已命中离线第一猜参考库。由于当前题号或资源库存与参考库规范不同，参考库仅提供高质量挑战候选；提示与挑战的最终取舍仍按当前资源由实时策略树重新计算。`;
-    else if (restrictedDecision) advice.reason = `提示与挑战已进入同一棵深度 ${restrictedDecision.depth} 的自适应策略树，并在完全猜中分支计入剩余题目的资源续值。已展开 ${restrictedDecision.expandedStates.toLocaleString('zh-CN')} 个状态；这是跨题近似值，尚未证明全局最优。`;
+    if (restrictedDecision) advice.reason = `提示与挑战已进入同一棵深度 ${restrictedDecision.depth} 的自适应策略树，并在完全猜中分支计入剩余题目的资源续值。已展开 ${restrictedDecision.expandedStates.toLocaleString('zh-CN')} 个状态；这是跨题近似值，尚未证明全局最优。`;
     if (mode === 'balanced' && !policyDecision && lastProof) {
       Object.assign(advice, lastProof);
       advice.reason = lastProof.proven
@@ -1670,7 +1633,7 @@
     const stats = $('#recommendCardStats');
     stats.hidden = false;
     stats.innerHTML = hint.strict
-      ? `<span>${hint.proven ? '已证明最优' : '当前可行下界'}</span><span>${hint.method === 'exact-bellman' ? '精确 Bellman' : hint.method === 'restricted-horizon' ? `深度${hint.depth}策略树` : hint.method === 'first-action-reference' ? '第一猜参考库' : '分支定界'}</span><span>候选组 ${candidateCache.length}</span><span>提示信息 ${hint.entropy.toFixed(2)} bit</span>`
+      ? `<span>${hint.proven ? '已证明最优' : '当前可行下界'}</span><span>${hint.method === 'exact-bellman' ? '精确 Bellman' : hint.method === 'restricted-horizon' ? `深度${hint.depth}策略树` : '分支定界'}</span><span>候选组 ${candidateCache.length}</span><span>提示信息 ${hint.entropy.toFixed(2)} bit</span>`
       : recommendHint
       ? `<span>剩余提示 ${state.hints}</span><span>后续预留 ${hint.futureReserve}</span><span>当前可支配 ${hint.spendableHints}</span><span>有效候选约 ${hint.effectiveCandidates.toFixed(1)}</span>`
       : `<span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span>`;
@@ -1965,9 +1928,7 @@
     [...$('#simulationParallel').options].forEach((option)=>{option.disabled=Number(option.value)>hardwareCap;});
     if (Number($('#simulationParallel').value) > hardwareCap) $('#simulationParallel').value=String([8,4,2,1].find((value)=>value<=hardwareCap));
     const pool = $('#simulationPool').value;
-    $('#simulationUseReference').disabled = pool !== 'md';
-    const referenceText = pool === 'md' ? ($('#simulationUseReference').checked ? '启用第一猜参考库' : '不使用第一猜参考库') : '完整卡池不适用第一猜参考库';
-    $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次；${referenceText}。每一步使用与实操相同的策略树。当前设备最多开放 ${hardwareCap} 路并行，推荐 4 路以平衡速度和内存。`;
+    $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次。每一步使用与实操相同的实时策略树。当前设备最多开放 ${hardwareCap} 路并行，推荐 4 路以平衡速度和内存。`;
   }
 
   function openSimulation() {
@@ -2218,7 +2179,7 @@
 
   function combinedSimulationSnapshot(parts, total, config) {
     const results = parts.flatMap((part) => part?.results || []);
-    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','referenceDecisions','referenceDirectDecisions','referenceSeedDecisions','hintDecisions','challengeDecisions'];
+    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','hintDecisions','challengeDecisions'];
     const diagnostics = Object.fromEntries(diagnosticKeys.map((key) => [key, parts.reduce((sum, part) => sum + Number(part?.diagnostics?.[key] || 0), 0)]));
     const average = (key) => results.length ? results.reduce((sum,item)=>sum+item[key],0)/results.length : 0;
     const solvedValues = results.map((item)=>item.solved).sort((a,b)=>a-b), meanSolved=average('solved');
@@ -2241,8 +2202,7 @@
     const runningText=current?`并行任务进行中 · 已完成 ${completed}/${total} · 当前第 ${current.puzzle} 题 · 候选 ${current.candidates.toLocaleString('zh-CN')} · 库存 ${current.hints}提示/${current.challenges}挑战`:`已完成 ${completed}/${total}`;
     $('#simulationProgress strong').textContent=type==='complete'?`已完成 ${completed}/${total}`:type==='cancelled'?`已停止，完成 ${completed}/${total}`:runningText;
     const d=summary.diagnostics,distribution=summary.distribution||[];
-    $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次实时求解 · ${d.referenceDecisions} 次第一猜参考 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
-    if (d.referenceDecisions) $('#simulationResults .simulation-disclaimer').insertAdjacentHTML('beforebegin', `<p class="simulation-disclaimer">参考库使用明细：直接采用 ${d.referenceDirectDecisions || 0} 次；仅加入实时搜索候选 ${d.referenceSeedDecisions || 0} 次。</p>`);
+    $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次实时求解 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
   }
 
   function renderSimulationWorkers(snapshot) {
@@ -2260,7 +2220,6 @@
     if (simulationRunning) { simulationWorkers.forEach(({worker})=>worker.postMessage({type:'cancel'})); $('#runSimulationBtn').textContent='正在停止…'; return; }
     const rounds = clampInt($('#simulationRounds').value, 1, 500, 50);
     const pool = $('#simulationPool').value;
-    const useReference = $('#simulationUseReference').checked && pool === 'md';
     const config = normalizeConfig(state.config);
     const hardwareCap = Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
     const parallel = Math.min(rounds, hardwareCap, clampInt($('#simulationParallel').value, 1, 8, 4));
@@ -2291,7 +2250,7 @@
         }
       };
       worker.onerror=(event)=>{parts[index]={type:'error',results:parts[index]?.results||[],diagnostics:parts[index]?.diagnostics||{},message:event.message};worker.terminate();};
-      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds,useReference,referenceStates:useReference?window.FIRST_ACTION_REFERENCE?.states:null,referenceCanonical:useReference?window.FIRST_ACTION_REFERENCE?.canonical:null});
+      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds});
       return {worker,rounds:workerRounds};
     });
   }
@@ -2327,7 +2286,6 @@
     $('#feedbackCloseBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#feedbackCancelBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#calculateBtn').addEventListener('click', calculateRecommendations);
-    $('#referencePriorityToggle').addEventListener('change', () => { clearRecommendation(); toast($('#referencePriorityToggle').checked ? '已启用第一猜参考库。' : '已关闭第一猜参考库；下一次将完全实时计算。'); });
     $('#compareRecommendationsBtn').addEventListener('click', () => {
       const seeds = lastRecommendations.slice(0, 4).map((item) => item.index);
       if (!seeds.length && selectedGuess == null) { toast('请先计算推荐，或在挑战区选择一张卡。'); return; }
@@ -2508,7 +2466,6 @@
     $('#simulationBtn').addEventListener('click', openSimulation);
     $('#simulationCloseBtn').addEventListener('click', () => $('#simulationDialog').close());
     $('#simulationCancelBtn').addEventListener('click', () => $('#simulationDialog').close());
-    $('#simulationUseReference').addEventListener('change', () => { localStorage.setItem('card-decoder-simulation-reference', $('#simulationUseReference').checked ? '1' : '0'); simulationSnapshot=null; $('#simulationProgress').hidden=true; $('#simulationResults').innerHTML='<div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div>'; updateSimulationConfigSummary(); });
     $('#simulationPool').addEventListener('change', () => { simulationSnapshot=null; $('#simulationProgress').hidden=true; $('#simulationResults').innerHTML='<div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div>'; updateSimulationConfigSummary(); });
     $('#simulationForm').addEventListener('submit', (event) => { event.preventDefault(); runSimulation(); });
     $('#imageViewerClose').addEventListener('click', () => $('#imageViewerDialog').close());
@@ -2607,7 +2564,6 @@
     });
   }
 
-  $('#simulationUseReference').checked = localStorage.getItem('card-decoder-simulation-reference') !== '0';
   bindEvents();
   renderModeGuide();
   render();

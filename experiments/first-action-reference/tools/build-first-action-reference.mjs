@@ -15,10 +15,11 @@ import { createRequire } from 'node:module';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const require = createRequire(import.meta.url);
-const root = path.resolve(path.dirname(scriptPath), '..');
+const archiveRoot = path.resolve(path.dirname(scriptPath), '..');
+const root = path.resolve(archiveRoot, '..', '..');
 const dist = path.join(root, 'dist');
-const outputPath = path.join(dist, 'first-action-reference.js');
-const checkpointPath = path.join(dist, 'first-action-reference.partial.json');
+const outputPath = path.join(archiveRoot, 'runtime', 'first-action-reference.js');
+const checkpointPath = path.join(archiveRoot, 'runtime', 'first-action-reference.partial.json');
 // The interactive solver may use a smaller, user-selected state budget for
 // responsiveness.  This offline library is deliberately more patient: the
 // largest observed depth-3 initial states need over 460k expanded states.
