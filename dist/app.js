@@ -1357,42 +1357,6 @@
     };
   }
 
-  function runResourceRouteDecision(candidates, alreadyGuessed, quick, token) {
-    if (!window.RESOURCE_ROUTE_DATA?.profiles?.length || !window.RESOURCE_ROUTE_WORKER_SOURCE || typeof Worker === 'undefined') return Promise.resolve(null);
-    const knownMask = FIELDS.reduce((mask, field) => mask | (state.known[field.key] ? field.bit : 0), 0);
-    const baseActions = restrictedActionSet(candidates, quick, [], false);
-    const rollouts = clampInt($('#resourceRollouts').value, 2, 8, 4);
-    $('#calcProgress em').textContent = `资源路线规划：正在运行 ${rollouts} 组配对抽样…`;
-    return new Promise((resolve) => {
-      const workerUrl = URL.createObjectURL(new Blob([window.RESOURCE_ROUTE_WORKER_SOURCE], { type:'text/javascript' }));
-      const worker = new Worker(workerUrl);
-      const finish = (value) => { worker.terminate(); URL.revokeObjectURL(workerUrl); resolve(value); };
-      const timeout = setTimeout(() => finish(null), 5 * 60 * 1000);
-      worker.onmessage = ({ data }) => {
-        if (token !== calculationToken) { clearTimeout(timeout); finish(null); return; }
-        if (data.type === 'error') { console.error(data.message); clearTimeout(timeout); finish(null); return; }
-        if (data.type !== 'complete') return;
-        clearTimeout(timeout);
-        const result = {
-          action:data.best?.action || { type:'stop' }, value:data.best?.value || [0,0],
-          rootActionValues:(data.compared || []).map((entry) => ({ action:entry.action, value:[...entry.value,-1] })),
-          method:'resource-route-rollout', proven:false, rollouts:data.rollouts,
-          profileSamples:data.profileSamples || window.RESOURCE_ROUTE_DATA.validationSamples || window.RESOURCE_ROUTE_DATA.samples,
-        };
-        finish(result);
-      };
-      worker.onerror = (event) => { console.error(event.message); clearTimeout(timeout); finish(null); };
-      worker.postMessage({
-        cards:CARDS, pool:state.pool, profiles:window.RESOURCE_ROUTE_DATA.profiles,
-        profileSamples:window.RESOURCE_ROUTE_DATA.validationSamples || window.RESOURCE_ROUTE_DATA.samples,
-        candidates, knownMask, matchedMask:state.matchedMask, guessed:[...alreadyGuessed],
-        hints:state.hints, challenges:state.challenges,
-        remainingPuzzles:Math.max(1,state.config.puzzles-state.puzzle+1), rollouts, baseActions,
-        seed:((state.puzzle*2654435761) ^ (state.hints*2246822519) ^ (state.challenges*3266489917) ^ candidates.length) >>> 0,
-      });
-    });
-  }
-
   async function calculateRecommendations() {
     if (!candidateCache.length || state.challenges <= 0 || state.solved) return null;
     const token = ++calculationToken;
@@ -1496,19 +1460,16 @@
       }
     }
     finalists.sort((a, b) => mode === 'balanced' ? compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)) : b.score - a.score);
-    const resourceMode = mode === 'balanced' && $('#solverAlgorithm').value === 'resource';
-    const resourceDecision = resourceMode ? await runResourceRouteDecision(candidates, alreadyGuessed, quick, token) : null;
-    if (token !== calculationToken) return;
-    const referenceDecision = resourceMode ? null : firstActionReferenceDecision(mode);
+    const referenceDecision = firstActionReferenceDecision(mode);
     // This is a user preference rather than a hidden override: the reference
     // can be preferred on later puzzles too, or turned off for a fully live
     // resource-aware calculation.
     const useReferenceDirect = Boolean(referenceDecision && $('#referencePriorityToggle').checked);
-    const exactDecision = mode === 'balanced' && !resourceMode && !useReferenceDirect ? tryExactBellman(candidates, alreadyGuessed) : null;
+    const exactDecision = mode === 'balanced' && !useReferenceDirect ? tryExactBellman(candidates, alreadyGuessed) : null;
     const enhancedSearch = mode === 'balanced' && $('#enhancedSearchToggle').checked;
-    const restrictedDecision = mode === 'balanced' && !resourceMode && !useReferenceDirect && !exactDecision
+    const restrictedDecision = mode === 'balanced' && !useReferenceDirect && !exactDecision
       ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, enhancedSearch, referenceDecision?.seedIndexes || []) : null;
-    const policyDecision = resourceDecision || (useReferenceDirect ? referenceDecision : (exactDecision || restrictedDecision));
+    const policyDecision = useReferenceDirect ? referenceDecision : (exactDecision || restrictedDecision);
     lastProof = policyDecision || (mode === 'balanced' ? boundedCertificate(quick) : null);
     if (policyDecision?.action?.type === 'challenge') {
       let exactItem = finalists.find((item) => item.index === policyDecision.action.index);
@@ -1541,10 +1502,7 @@
       const tiedCandidates = [...new Set((policyDecision.optimalActions || []).filter((action) => action.type === 'challenge' && candidateSet.has(action.index)).map((action) => action.index))];
       if (tiedCandidates.length > 1) advice.equivalentChoices = tiedCandidates;
     }
-    if (resourceDecision) advice.reason = resourceDecision.action.type === 'hint'
-      ? `资源路线规划在当前库存下比较了“先提示”和“先挑战”的完整后续模拟，${resourceDecision.rollouts} 组配对抽样更支持先使用提示。路线价值来自 ${Number(resourceDecision.profileSamples || 0).toLocaleString('zh-CN')} 个独立验证样本，不使用固定提示／挑战兑换比。`
-      : `资源路线规划在当前库存下比较了“先提示”和“先挑战”的完整后续模拟，${resourceDecision.rollouts} 组配对抽样更支持挑战“${CARDS[resourceDecision.action.index]?.name || ''}”。结果是统计策略改进，不宣称全局最优。`;
-    else if (useReferenceDirect) advice.reason = referenceDecision.canonicalContext
+    if (useReferenceDirect) advice.reason = referenceDecision.canonicalContext
       ? `已优先采用离线第一猜参考库：提示与挑战在同一棵深度 ${referenceDecision.depth} 的自适应策略树中比较。该初始揭示状态已离线展开 ${referenceDecision.expandedStates.toLocaleString('zh-CN')} 个状态；大候选状态使用已声明的覆盖挑战集合。`
       : `已优先采用离线第一猜参考库。当前题号或资源库存与其默认规范不同，因此这是可由你关闭的优先推荐；如需按当前资源重新比较提示与挑战，请关闭“优先采用第一猜参考库”。`;
     else if (referenceDecision) advice.reason = `已命中离线第一猜参考库。由于当前题号或资源库存与参考库规范不同，参考库仅提供高质量挑战候选；提示与挑战的最终取舍仍按当前资源由实时策略树重新计算。`;
@@ -1838,7 +1796,7 @@
     const stats = $('#recommendCardStats');
     stats.hidden = false;
     stats.innerHTML = hint.strict
-      ? `<span>${hint.method === 'resource-route-rollout' ? '统计策略估计' : hint.proven ? '已证明最优' : '当前可行下界'}</span><span>${hint.method === 'exact-bellman' ? '精确 Bellman' : hint.method === 'restricted-horizon' ? `深度${hint.depth}策略树` : hint.method === 'resource-route-rollout' ? `${hint.rollouts} 组滚动抽样` : '分支定界'}</span><span>候选组 ${candidateCache.length}</span><span>提示信息 ${hint.entropy.toFixed(2)} bit</span>`
+      ? `<span>${hint.proven ? '已证明最优' : '当前可行下界'}</span><span>${hint.method === 'exact-bellman' ? '精确 Bellman' : hint.method === 'restricted-horizon' ? `深度${hint.depth}策略树` : hint.method === 'first-action-reference' ? '第一猜参考库' : '分支定界'}</span><span>候选组 ${candidateCache.length}</span><span>提示信息 ${hint.entropy.toFixed(2)} bit</span>`
       : recommendHint
       ? `<span>剩余提示 ${state.hints}</span><span>后续预留 ${hint.futureReserve}</span><span>当前可支配 ${hint.spendableHints}</span><span>有效候选约 ${hint.effectiveCandidates.toFixed(1)}</span>`
       : `<span>${escapeHtml(formatBorder(card.b))}</span><span>${escapeHtml(DATA.labels.attribute[card.a] || card.a)}</span><span>${escapeHtml(DATA.labels.race[card.r] || card.r)}</span><span>${card.n}</span><span>${formatStat(card.atk)}／${formatStat(card.def)}</span>`;
@@ -1848,9 +1806,7 @@
     $('#alternatives').innerHTML = chooseAny
       ? equivalentChoices.slice(0,8).map((index,offset)=>`<button class="alternative" type="button" data-recommend-index="${index}"><div class="alternative-title"><b>=</b><span>${escapeHtml(CARDS[index].name)}</span></div><div class="alternative-metrics"><span><small>关系</small>并列最优</span><span><small>操作</small>点击选择</span></div></button>`).join('')
       : recommendations.slice(recommendHint ? 0 : 1, recommendHint ? 3 : 4).map((item, offset) => `<button class="alternative" type="button" data-recommend-index="${item.index}"><div class="alternative-title"><b>${offset + 1}</b><span>${escapeHtml(CARDS[item.index].name)}</span></div><div class="alternative-metrics">${item.policyValue ? `<span><small>策略解题</small>${item.policyValue[0].toFixed(4)}</span><span><small>策略相符</small>${item.policyValue[1].toFixed(3)}</span><span><small>策略行动</small>${(-item.policyValue[2]).toFixed(3)}</span>` : `<span><small>期望</small>${item.points.toFixed(2)}</span><span><small>通关</small>${formatPercent(item.solve)}</span><span><small>信息</small>${item.info.toFixed(2)} bit</span>`}</div></button>`).join('');
-    $('#methodNote').textContent = hint.method === 'resource-route-rollout'
-      ? `资源路线模式使用独立训练／验证的整题路线分布，并在每一步重新比较提示与挑战；抽样越多越稳定，耗时也近似线性增加。`
-      : hint.method === 'restricted-horizon'
+    $('#methodNote').textContent = hint.method === 'restricted-horizon'
       ? hint.enhanced
         ? `实验性增强搜索：已将 ${hint.actionCount} 张多方向代表卡放入同一深度 ${hint.depth} 策略树，前四按强制首步后的策略价值排序；仍不等于全局最优证明。`
         : `当前为受限深度自适应策略树：提示与挑战使用相同递归和终止规则；结果是合法可行策略，不等于全局最优证明。`
@@ -1872,19 +1828,7 @@
       solve: '分析视图：只比较这一猜直接通关的概率，不代表全活动最优。',
       info: '分析视图：只比较反馈信息量；信息熵不会在严格决策中折算为奖励。',
     };
-    $('#modeGuide').textContent = $('#solverAlgorithm')?.value === 'resource' && $('#recommendMode').value === 'balanced'
-      ? '新方案：按剩余题数与库存滚动比较提示和挑战；不改动原稳定搜索，可随时切回。'
-      : guides[$('#recommendMode').value];
-  }
-
-  function renderAlgorithmControls() {
-    const resource = $('#solverAlgorithm').value === 'resource';
-    $('#resourceRolloutWrap').hidden = !resource;
-    $('#referencePriorityToggle').closest('label').hidden = resource;
-    $('#enhancedSearchToggle').closest('label').hidden = resource;
-    $('#strategyExperimentBtn').hidden = resource;
-    localStorage.setItem('card-decoder-algorithm', resource ? 'resource' : 'stable');
-    renderModeGuide();
+    $('#modeGuide').textContent = guides[$('#recommendMode').value];
   }
 
   function binaryEntropy(probability) {
@@ -2502,8 +2446,7 @@
     $('#feedbackCloseBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#feedbackCancelBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#calculateBtn').addEventListener('click', calculateRecommendations);
-    $('#solverAlgorithm').addEventListener('change', () => { renderAlgorithmControls(); clearRecommendation(); });
-    $('#resourceRollouts').addEventListener('change', () => { localStorage.setItem('card-decoder-resource-rollouts', $('#resourceRollouts').value); clearRecommendation(); });
+    $('#referencePriorityToggle').addEventListener('change', () => { clearRecommendation(); toast($('#referencePriorityToggle').checked ? '已启用第一猜参考库。' : '已关闭第一猜参考库；下一次将完全实时计算。'); });
     $('#enhancedSearchToggle').addEventListener('change', () => { clearRecommendation(); toast($('#enhancedSearchToggle').checked ? '已启用实验性增强搜索；下一次计算会更慢，稳定策略与规模测试不受影响。' : '已恢复稳定搜索逻辑。'); });
     $('#strategyExperimentBtn').addEventListener('click', openStrategyExperiment);
     $('#strategyExperimentCloseBtn').addEventListener('click', () => $('#strategyExperimentDialog').close());
@@ -2788,10 +2731,8 @@
     });
   }
 
-  $('#solverAlgorithm').value = localStorage.getItem('card-decoder-algorithm') === 'resource' ? 'resource' : 'stable';
-  $('#resourceRollouts').value = ['2','4','8'].includes(localStorage.getItem('card-decoder-resource-rollouts')) ? localStorage.getItem('card-decoder-resource-rollouts') : '4';
   bindEvents();
-  renderAlgorithmControls();
+  renderModeGuide();
   render();
   startWallpaperCycle();
   registerWebMcpTools();
