@@ -718,3 +718,5 @@ html[data-theme="light"] input[type="checkbox"] { accent-color:#0f8d84; }
   .experiment-group { grid-template-columns:1fr 1fr; }
   .test-actions, .history-summary { grid-template-columns: 1fr; }
 }
+.algorithm-switch{display:flex;gap:10px;align-items:end;margin:8px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--panel) 82%,var(--accent) 18%)}
+.algorithm-switch label{display:grid;gap:4px;min-width:0;flex:1}.algorithm-switch label span{font-size:.76rem;color:var(--muted)}.algorithm-switch select{width:100%;min-height:38px}

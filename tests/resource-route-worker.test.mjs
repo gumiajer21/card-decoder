@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);globalThis.window=globalThis;globalThis.self=globalThis;require('../dist/cards-data.js');
+const data=JSON.parse(fs.readFileSync('tools/resource-route-packages.json','utf8')),source=fs.readFileSync('dist/resource-route-worker.js','utf8');let output=null;globalThis.postMessage=(message)=>{output=message;};eval(source);
+globalThis.onmessage({data:{cards:CARD_DATA.cards,pool:'md',profiles:data.profiles,profileSamples:data.validationSamples,candidates:[0],knownMask:2,matchedMask:0,guessed:[],hints:11,challenges:27,remainingPuzzles:9,rollouts:2,baseActions:[0,1,2,3,4,5],seed:123}});
+assert.equal(output?.type,'complete');assert.equal(output.best.action.type,'challenge');assert.equal(output.best.action.index,0);assert.equal(output.best.value[0],9);
+const dark=CARD_DATA.cards.map((card,index)=>card.wm>0&&card.a===32?index:-1).filter(index=>index>=0);output=null;
+globalThis.onmessage({data:{cards:CARD_DATA.cards,pool:'md',profiles:data.profiles,profileSamples:data.validationSamples,candidates:dark,knownMask:2,matchedMask:0,guessed:[],hints:11,challenges:27,remainingPuzzles:9,rollouts:2,baseActions:[0,1,2,3,4,5,19,24,31,42,95,133,140],seed:456}});
+assert.equal(output?.type,'complete');assert.ok(output.compared.some(entry=>entry.action.type==='hint'));assert.ok(output.compared.some(entry=>entry.action.type==='challenge'));
+console.log('resource-route browser worker: PASS');

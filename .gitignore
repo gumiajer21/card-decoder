@@ -2,6 +2,14 @@ dist/card-images/
 dist/card-images-high/
 dist/card-images-zh/
 *.log
+dist/first-action-reference.partial.json
+tools/resource-route-activity*.json
+tools/resource-route-rollout*.json
+tools/resource-route-profiles*.json
+tools/resource-route-profile-analysis.json
+tools/resource-route-real-state-result.json
+tools/resource-route-coverage-result.json
+tools/resource-route-packages-entropy-500.json
 *.zip
 .DS_Store
 Thumbs.db
