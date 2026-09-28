@@ -88,13 +88,6 @@
   let comparisonIndices = [];
   let comparisonStrategyResults = new Map();
   let comparisonCalculationToken = 0;
-  let strategyExperimentWorker = null;
-  let strategyExperimentRows = [
-    { name:'基准', depth:3, budget:24000 },
-    { name:'增强', depth:3, budget:80000 },
-    { name:'深度4', depth:4, budget:200000 },
-    { name:'深度5', depth:5, budget:500000 },
-  ];
   let simulationRunning = false;
   let simulationWorkers = [];
   let simulationWorkerUrl = null;
@@ -1179,77 +1172,6 @@
     container.innerHTML = results.length ? results.map((index) => `<button class="search-result" type="button" data-compare-card-index="${index}"><span><strong>${escapeHtml(CARDS[index].name)}</strong><small>${escapeHtml(cardStats(CARDS[index]))}</small></span><small>${comparisonIndices.includes(index) ? '已加入' : '加入'}</small></button>`).join('') : '<div class="empty-inline">没有找到卡名</div>';
   }
 
-  function renderExperimentGroups() {
-    $('#experimentGroups').innerHTML = strategyExperimentRows.map((row,index) => `<div class="experiment-group"><input data-experiment-name="${index}" type="text" value="${escapeAttr(row.name)}" aria-label="组名"><label><span>深度</span><input data-experiment-depth="${index}" type="number" min="1" max="8" value="${row.depth}"></label><label><span>状态预算</span><input data-experiment-budget="${index}" type="number" min="1000" max="2000000" step="1000" value="${row.budget}"></label><button data-remove-experiment="${index}" class="icon-btn" type="button" aria-label="删除">×</button></div>`).join('');
-  }
-
-  function readExperimentGroups() {
-    return strategyExperimentRows.map((row,index) => ({
-      name: $(`[data-experiment-name="${index}"]`)?.value.trim() || `实验${index+1}`,
-      depth: clampInt($(`[data-experiment-depth="${index}"]`)?.value,1,8,row.depth),
-      budget: clampInt($(`[data-experiment-budget="${index}"]`)?.value,1000,2000000,row.budget),
-    }));
-  }
-
-  function openStrategyExperiment() {
-    renderExperimentGroups();
-    $('#strategyExperimentProgress').hidden = true;
-    $('#strategyExperimentDialog').showModal();
-  }
-
-  function stopStrategyExperiment(message = '实验已停止。') {
-    if (strategyExperimentWorker) strategyExperimentWorker.terminate();
-    strategyExperimentWorker = null;
-    $('#cancelStrategyExperimentBtn').hidden = true;
-    $('#runStrategyExperimentBtn').disabled = false;
-    $('#strategyExperimentProgress').hidden = false;
-    $('#strategyExperimentProgress').textContent = message;
-  }
-
-  async function runStrategyExperiment() {
-    if (!strategyExperimentRows.length) { toast('请至少添加一个实验组。'); return; }
-    if (!candidateCache.length || state.challenges <= 0) { toast('当前状态无法运行策略实验。'); return; }
-    strategyExperimentRows = readExperimentGroups();
-    const progress = $('#strategyExperimentProgress');
-    progress.hidden = false;
-    progress.textContent = '正在准备增强行动集合…';
-    $('#runStrategyExperimentBtn').disabled = true;
-    $('#cancelStrategyExperimentBtn').hidden = false;
-    $('#strategyExperimentResults').innerHTML = '';
-    if (!lastQuickMetrics.length) await calculateRecommendations();
-    if (!lastQuickMetrics.length) { stopStrategyExperiment('无法建立行动集合。'); return; }
-    const actions = restrictedActionSet(candidateCache,lastQuickMetrics,[],true);
-    const knownMask = FIELDS.reduce((mask,field)=>mask|(state.known[field.key]?field.bit:0),0);
-    const source = window.STRATEGY_EXPERIMENT_WORKER_SOURCE;
-    if (!source) { stopStrategyExperiment('实验后台模块未载入。'); return; }
-    const url = URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
-    strategyExperimentWorker = new Worker(url);
-    URL.revokeObjectURL(url);
-    const results = [];
-    strategyExperimentWorker.onmessage = ({data}) => {
-      if (data.type === 'group-start') progress.textContent = `正在运行 ${data.position+1}/${strategyExperimentRows.length}：${data.group.name}（深度 ${data.group.depth}，预算 ${data.group.budget.toLocaleString('zh-CN')}）`;
-      if (data.type === 'group-result' || data.type === 'group-error') {
-        results[data.position] = data;
-        $('#strategyExperimentResults').innerHTML = results.filter(Boolean).map((entry) => {
-          if (entry.type === 'group-error') return `<article class="experiment-result is-error"><header><strong>${escapeHtml(entry.group.name)}</strong><span>${entry.elapsed.toFixed(2)} 秒</span></header><p>深度 ${entry.group.depth} · 预算 ${entry.group.budget.toLocaleString('zh-CN')} · ${entry.limitReached?'达到状态上限':'计算错误'}</p></article>`;
-          const best = entry.result.action?.type === 'challenge' ? CARDS[entry.result.action.index]?.name : entry.result.action?.type === 'hint' ? '使用提示' : '停止';
-          const top = [...entry.result.rootActionValues].sort((a,b)=>compareObjectiveVectors(b.value,a.value)).slice(0,4);
-          return `<article class="experiment-result"><header><strong>${escapeHtml(entry.group.name)}</strong><span>${entry.elapsed.toFixed(2)} 秒</span></header><div class="experiment-summary"><span>深度 <b>${entry.group.depth}</b></span><span>预算 <b>${entry.group.budget.toLocaleString('zh-CN')}</b></span><span>展开 <b>${entry.result.expandedStates.toLocaleString('zh-CN')}</b></span><span>首选 <b>${escapeHtml(best||'—')}</b></span></div><p>策略价值：${entry.result.value.map((value)=>value.toFixed(4)).join('／')}</p><ol>${top.map((item)=>`<li>${escapeHtml(CARDS[item.action.index].name)} <small>${item.value.map((value)=>value.toFixed(3)).join('／')}</small></li>`).join('')}</ol></article>`;
-        }).join('');
-      }
-      if (data.type === 'complete') {
-        strategyExperimentWorker.terminate(); strategyExperimentWorker=null;
-        progress.textContent='全部实验完成。可比较深度、预算、耗时、展开状态与首选是否收敛。';
-        $('#cancelStrategyExperimentBtn').hidden=true; $('#runStrategyExperimentBtn').disabled=false;
-      }
-    };
-    strategyExperimentWorker.onerror = (event) => stopStrategyExperiment(`实验失败：${event.message}`);
-    strategyExperimentWorker.postMessage({type:'start',cards:CARDS,weights:CARDS.map((card)=>weightOf(card)),actions,
-      state:{hints:state.hints,challenges:state.challenges,candidates:candidateCache,knownMask,matchedMask:state.matchedMask,
-        guessed:state.logs.filter((log)=>log.type==='challenge').map((log)=>log.guess),remainingPuzzles:state.config.puzzles-state.puzzle+1,
-        resourceModel:{hintChallengeRatio:.61,equivalentCostPerSolve:3.9}},groups:strategyExperimentRows});
-  }
-
   function populateBorderRevealChoices() {
     const guess = CARDS[selectedGuess];
     const values = [...new Set(CARDS.filter((card) => weightOf(card) > 0 && (matchMask(card, guess) & 1)).map((card) => card.b))].sort((a,b)=>a-b);
@@ -1466,9 +1388,8 @@
     // resource-aware calculation.
     const useReferenceDirect = Boolean(referenceDecision && $('#referencePriorityToggle').checked);
     const exactDecision = mode === 'balanced' && !useReferenceDirect ? tryExactBellman(candidates, alreadyGuessed) : null;
-    const enhancedSearch = mode === 'balanced' && $('#enhancedSearchToggle').checked;
     const restrictedDecision = mode === 'balanced' && !useReferenceDirect && !exactDecision
-      ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, enhancedSearch, referenceDecision?.seedIndexes || []) : null;
+      ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, referenceDecision?.seedIndexes || []) : null;
     const policyDecision = useReferenceDirect ? referenceDecision : (exactDecision || restrictedDecision);
     lastProof = policyDecision || (mode === 'balanced' ? boundedCertificate(quick) : null);
     if (policyDecision?.action?.type === 'challenge') {
@@ -1482,20 +1403,10 @@
         finalists.unshift(exactItem);
       }
     }
-    if (enhancedSearch && policyDecision?.rootActionValues?.length) {
-      const ranked = policyDecision.rootActionValues
-        .filter((entry) => entry.action?.type === 'challenge')
-        .sort((left, right) => compareObjectiveVectors(right.value, left.value))
-        .map((entry) => {
-          const item = finalists.find((candidate) => candidate.index === entry.action.index) || quickByIndex.get(entry.action.index);
-          return item ? { ...item, info:item.info ?? item.infoApprox ?? 0, policyValue: entry.value } : null;
-        })
-        .filter(Boolean);
-      lastRecommendations = ranked.slice(0, 6);
-    } else lastRecommendations = finalists.slice(0, 6);
+    lastRecommendations = finalists.slice(0, 6);
     if (token !== calculationToken) return;
     const advice = policyDecision
-      ? { use: policyDecision.action.type === 'hint', entropy: expectedHintEntropy(candidates, total), strict: true, proven: Boolean(policyDecision.proven), method: policyDecision.method, value: policyDecision.value, expandedStates: policyDecision.expandedStates, depth: policyDecision.depth, enhanced:Boolean(policyDecision.enhanced), actionCount:policyDecision.actionCount || policyDecision.rootActionValues?.length || 0, rollouts:policyDecision.rollouts, profileSamples:policyDecision.profileSamples }
+      ? { use: policyDecision.action.type === 'hint', entropy: expectedHintEntropy(candidates, total), strict: true, proven: Boolean(policyDecision.proven), method: policyDecision.method, value: policyDecision.value, expandedStates: policyDecision.expandedStates, depth: policyDecision.depth, actionCount:policyDecision.actionCount || policyDecision.rootActionValues?.length || 0 }
       : hintAdvice(candidates, total, lastRecommendations[0], mode);
     if (policyDecision?.action?.type === 'challenge') {
       const candidateSet = new Set(candidates);
@@ -1632,68 +1543,27 @@
     }
   }
 
-  function restrictedActionSet(candidates, quick, extras = [], enhanced = false) {
+  function restrictedActionSet(candidates, quick, extras = []) {
     const selected = new Set(extras);
     const addTop = (sorter, count) => [...quick].sort(sorter).slice(0, count).forEach((item) => selected.add(item.index));
-    addTop((a, b) => compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)), enhanced ? 30 : 18);
-    addTop((a, b) => b.infoApprox - a.infoApprox, enhanced ? 20 : 8);
-    [...candidates].sort((a, b) => weightOf(CARDS[b]) - weightOf(CARDS[a])).slice(0, enhanced ? 12 : 8).forEach((index) => selected.add(index));
-    if (!enhanced) return [...selected];
-
-    // The stable path deliberately remains small.  Experimental search uses a
-    // coverage set: every field value still present among targets receives a
-    // strong probing representative, rather than relying solely on global tops.
-    // This is not a proof-preserving quotient (the card data has already merged
-    // the 9059 physical cards into behaviour groups); it is an explicit, auditable
-    // approximation for the remaining non-candidate probes.
-    const metricOrder = (left, right) => {
-      const objective = compareObjectiveVectors(
-        [left.solve, left.newMatches, left.infoApprox],
-        [right.solve, right.newMatches, right.infoApprox],
-      );
-      return objective || right.points - left.points || left.index - right.index;
-    };
-    const ranked = [...quick].sort(metricOrder);
-    addTop((a, b) => b.solve - a.solve || b.newMatches - a.newMatches || b.infoApprox - a.infoApprox, 24);
-    addTop((a, b) => b.points - a.points || b.solve - a.solve || b.infoApprox - a.infoApprox, 24);
-    addTop((a, b) => b.newMatches - a.newMatches || b.infoApprox - a.infoApprox || b.solve - a.solve, 24);
-
-    const directLimit = candidates.length <= 256 ? candidates.length : 128;
-    const direct = [...candidates].sort((a, b) => weightOf(CARDS[b]) - weightOf(CARDS[a]) || a - b);
-    direct.slice(0, directLimit).forEach((index) => selected.add(index));
-
-    const valueOf = (card, field) => field.key === 'number' ? card.nm : fieldValue(card, field.key);
-    let coveredValueCount = 0;
-    for (const field of FIELDS) {
-      const targetValues = new Set(candidates.map((index) => valueOf(CARDS[index], field)));
-      for (const value of targetValues) {
-        const representative = ranked.find((item) => valueOf(CARDS[item.index], field) === value);
-        if (representative != null) { selected.add(representative.index); coveredValueCount += 1; }
-      }
-    }
-    const actions = [...selected];
-    actions.coverageInfo = {
-      directTotal: candidates.length,
-      directIncluded: Math.min(candidates.length, directLimit),
-      directComplete: candidates.length <= directLimit,
-      fieldValueRepresentatives: coveredValueCount,
-      extraProbes: Math.max(0, actions.length - Math.min(candidates.length, directLimit)),
-    };
-    return actions;
+    addTop((a, b) => compareObjectiveVectors(actionObjectiveVector(b), actionObjectiveVector(a)), 18);
+    addTop((a, b) => b.infoApprox - a.infoApprox, 8);
+    [...candidates].sort((a, b) => weightOf(CARDS[b]) - weightOf(CARDS[a])).slice(0, 8).forEach((index) => selected.add(index));
+    return [...selected];
   }
 
-  function tryRestrictedPolicy(candidates, alreadyGuessed, quick, enhanced = false, seedIndexes = []) {
+  function tryRestrictedPolicy(candidates, alreadyGuessed, quick, seedIndexes = []) {
     if (!window.DecoderSolver?.solveRestrictedHorizon || !quick.length) return null;
-    const selected = restrictedActionSet(candidates, quick, seedIndexes, enhanced);
+    const selected = restrictedActionSet(candidates, quick, seedIndexes);
     const knownMask = FIELDS.reduce((mask, field) => mask | (state.known[field.key] ? field.bit : 0), 0);
     const base = { cards: CARDS, weights: CARDS.map((card) => weightOf(card)), actions: selected,
       hints: state.hints, challenges: state.challenges, candidates, knownMask, matchedMask: state.matchedMask,
-      guessed: [...alreadyGuessed], maxStates: enhanced ? 80000 : 24000, remainingPuzzles: state.config.puzzles - state.puzzle + 1,
+      guessed: [...alreadyGuessed], maxStates: 24000, remainingPuzzles: state.config.puzzles - state.puzzle + 1,
       resourceModel: { hintChallengeRatio: .61, equivalentCostPerSolve: 3.9 } };
     for (const depth of [3, 2]) {
       try {
         const result = window.DecoderSolver.solveRestrictedHorizon({ ...base, depth });
-        return { ...result, enhanced, actionCount:selected.length, coverageInfo:selected.coverageInfo || null, proven: false, lower: result.value, upper: window.DecoderSolver.stateUpperBound({ config: state.config, puzzle: state.puzzle, challenges: state.challenges }) };
+        return { ...result, actionCount:selected.length, proven: false, lower: result.value, upper: window.DecoderSolver.stateUpperBound({ config: state.config, puzzle: state.puzzle, challenges: state.challenges }) };
       } catch (error) {
         if (!String(error.message).startsWith('HORIZON_STATE_LIMIT:')) console.error(error);
       }
@@ -1807,9 +1677,7 @@
       ? equivalentChoices.slice(0,8).map((index,offset)=>`<button class="alternative" type="button" data-recommend-index="${index}"><div class="alternative-title"><b>=</b><span>${escapeHtml(CARDS[index].name)}</span></div><div class="alternative-metrics"><span><small>关系</small>并列最优</span><span><small>操作</small>点击选择</span></div></button>`).join('')
       : recommendations.slice(recommendHint ? 0 : 1, recommendHint ? 3 : 4).map((item, offset) => `<button class="alternative" type="button" data-recommend-index="${item.index}"><div class="alternative-title"><b>${offset + 1}</b><span>${escapeHtml(CARDS[item.index].name)}</span></div><div class="alternative-metrics">${item.policyValue ? `<span><small>策略解题</small>${item.policyValue[0].toFixed(4)}</span><span><small>策略相符</small>${item.policyValue[1].toFixed(3)}</span><span><small>策略行动</small>${(-item.policyValue[2]).toFixed(3)}</span>` : `<span><small>期望</small>${item.points.toFixed(2)}</span><span><small>通关</small>${formatPercent(item.solve)}</span><span><small>信息</small>${item.info.toFixed(2)} bit</span>`}</div></button>`).join('');
     $('#methodNote').textContent = hint.method === 'restricted-horizon'
-      ? hint.enhanced
-        ? `实验性增强搜索：已将 ${hint.actionCount} 张多方向代表卡放入同一深度 ${hint.depth} 策略树，前四按强制首步后的策略价值排序；仍不等于全局最优证明。`
-        : `当前为受限深度自适应策略树：提示与挑战使用相同递归和终止规则；结果是合法可行策略，不等于全局最优证明。`
+      ? `当前为受限深度自适应策略树：提示与挑战使用相同递归和终止规则；结果是合法可行策略，不等于全局最优证明。`
       : `严格模式按预期解题数、首次相符项数、负行动数作词典序比较；信息熵只用于解释。`;
   }
 
@@ -2087,13 +1955,20 @@
     recordChallenge();
   }
 
-  function openSimulation() {
-    $('#simulationPool').value = state.pool;
+  function updateSimulationConfigSummary() {
     const config = state.config;
     const hardwareCap = Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
     [...$('#simulationParallel').options].forEach((option)=>{option.disabled=Number(option.value)>hardwareCap;});
     if (Number($('#simulationParallel').value) > hardwareCap) $('#simulationParallel').value=String([8,4,2,1].find((value)=>value<=hardwareCap));
-    $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次。每一步使用与实操相同的策略树。当前设备最多开放 ${hardwareCap} 路并行，推荐 4 路以平衡速度和内存。`;
+    const pool = $('#simulationPool').value;
+    $('#simulationUseReference').disabled = pool !== 'md';
+    const referenceText = pool === 'md' ? ($('#simulationUseReference').checked ? '启用第一猜参考库' : '不使用第一猜参考库') : '完整卡池不适用第一猜参考库';
+    $('#simulationConfigSummary').textContent = `${config.puzzles} 题；全活动提示 ${config.totalHints} 次、挑战 ${config.totalChallenges} 次；${referenceText}。每一步使用与实操相同的策略树。当前设备最多开放 ${hardwareCap} 路并行，推荐 4 路以平衡速度和内存。`;
+  }
+
+  function openSimulation() {
+    $('#simulationPool').value = state.pool;
+    updateSimulationConfigSummary();
     if (simulationSnapshot) { renderSimulationSnapshot(simulationSnapshot); renderSimulationWorkers(simulationSnapshot); }
     $('#runSimulationBtn').textContent = simulationRunning ? '停止后台测试' : '开始模拟';
     $('#simulationDialog').showModal();
@@ -2339,7 +2214,7 @@
 
   function combinedSimulationSnapshot(parts, total, config) {
     const results = parts.flatMap((part) => part?.results || []);
-    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','hintDecisions','challengeDecisions'];
+    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','referenceDecisions','hintDecisions','challengeDecisions'];
     const diagnostics = Object.fromEntries(diagnosticKeys.map((key) => [key, parts.reduce((sum, part) => sum + Number(part?.diagnostics?.[key] || 0), 0)]));
     const average = (key) => results.length ? results.reduce((sum,item)=>sum+item[key],0)/results.length : 0;
     const solvedValues = results.map((item)=>item.solved).sort((a,b)=>a-b), meanSolved=average('solved');
@@ -2362,7 +2237,7 @@
     const runningText=current?`并行任务进行中 · 已完成 ${completed}/${total} · 当前第 ${current.puzzle} 题 · 候选 ${current.candidates.toLocaleString('zh-CN')} · 库存 ${current.hints}提示/${current.challenges}挑战`:`已完成 ${completed}/${total}`;
     $('#simulationProgress strong').textContent=type==='complete'?`已完成 ${completed}/${total}`:type==='cancelled'?`已停止，完成 ${completed}/${total}`:runningText;
     const d=summary.diagnostics,distribution=summary.distribution||[];
-    $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次求解 · ${d.cacheHits} 次缓存 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
+    $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次实时求解 · ${d.referenceDecisions} 次第一猜参考 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
   }
 
   function renderSimulationWorkers(snapshot) {
@@ -2380,6 +2255,7 @@
     if (simulationRunning) { simulationWorkers.forEach(({worker})=>worker.postMessage({type:'cancel'})); $('#runSimulationBtn').textContent='正在停止…'; return; }
     const rounds = clampInt($('#simulationRounds').value, 1, 500, 50);
     const pool = $('#simulationPool').value;
+    const useReference = $('#simulationUseReference').checked && pool === 'md';
     const config = normalizeConfig(state.config);
     const hardwareCap = Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
     const parallel = Math.min(rounds, hardwareCap, clampInt($('#simulationParallel').value, 1, 8, 4));
@@ -2410,7 +2286,7 @@
         }
       };
       worker.onerror=(event)=>{parts[index]={type:'error',results:parts[index]?.results||[],diagnostics:parts[index]?.diagnostics||{},message:event.message};worker.terminate();};
-      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds});
+      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds,useReference,referenceStates:useReference?window.FIRST_ACTION_REFERENCE?.states:null});
       return {worker,rounds:workerRounds};
     });
   }
@@ -2447,13 +2323,6 @@
     $('#feedbackCancelBtn').addEventListener('click', () => $('#feedbackDialog').close());
     $('#calculateBtn').addEventListener('click', calculateRecommendations);
     $('#referencePriorityToggle').addEventListener('change', () => { clearRecommendation(); toast($('#referencePriorityToggle').checked ? '已启用第一猜参考库。' : '已关闭第一猜参考库；下一次将完全实时计算。'); });
-    $('#enhancedSearchToggle').addEventListener('change', () => { clearRecommendation(); toast($('#enhancedSearchToggle').checked ? '已启用实验性增强搜索；下一次计算会更慢，稳定策略与规模测试不受影响。' : '已恢复稳定搜索逻辑。'); });
-    $('#strategyExperimentBtn').addEventListener('click', openStrategyExperiment);
-    $('#strategyExperimentCloseBtn').addEventListener('click', () => $('#strategyExperimentDialog').close());
-    $('#runStrategyExperimentBtn').addEventListener('click', runStrategyExperiment);
-    $('#cancelStrategyExperimentBtn').addEventListener('click', () => stopStrategyExperiment());
-    $('#addExperimentGroupBtn').addEventListener('click', () => { strategyExperimentRows=readExperimentGroups(); strategyExperimentRows.push({name:`实验${strategyExperimentRows.length+1}`,depth:4,budget:200000}); renderExperimentGroups(); });
-    $('#experimentGroups').addEventListener('click',(event)=>{const button=event.target.closest('[data-remove-experiment]');if(!button)return;strategyExperimentRows=readExperimentGroups().filter((_,index)=>index!==Number(button.dataset.removeExperiment));renderExperimentGroups();});
     $('#compareRecommendationsBtn').addEventListener('click', () => {
       const seeds = lastRecommendations.slice(0, 4).map((item) => item.index);
       if (!seeds.length && selectedGuess == null) { toast('请先计算推荐，或在挑战区选择一张卡。'); return; }
@@ -2634,6 +2503,8 @@
     $('#simulationBtn').addEventListener('click', openSimulation);
     $('#simulationCloseBtn').addEventListener('click', () => $('#simulationDialog').close());
     $('#simulationCancelBtn').addEventListener('click', () => $('#simulationDialog').close());
+    $('#simulationUseReference').addEventListener('change', () => { localStorage.setItem('card-decoder-simulation-reference', $('#simulationUseReference').checked ? '1' : '0'); simulationSnapshot=null; $('#simulationProgress').hidden=true; $('#simulationResults').innerHTML='<div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div>'; updateSimulationConfigSummary(); });
+    $('#simulationPool').addEventListener('change', () => { simulationSnapshot=null; $('#simulationProgress').hidden=true; $('#simulationResults').innerHTML='<div class="empty-inline">选择轮数后运行，结果不会修改真实活动进度。</div>'; updateSimulationConfigSummary(); });
     $('#simulationForm').addEventListener('submit', (event) => { event.preventDefault(); runSimulation(); });
     $('#imageViewerClose').addEventListener('click', () => $('#imageViewerDialog').close());
     $('#imageViewerDialog').addEventListener('click', (event) => {
@@ -2731,6 +2602,7 @@
     });
   }
 
+  $('#simulationUseReference').checked = localStorage.getItem('card-decoder-simulation-reference') !== '0';
   bindEvents();
   renderModeGuide();
   render();
