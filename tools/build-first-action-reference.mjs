@@ -22,8 +22,8 @@ const checkpointPath = path.join(dist, 'first-action-reference.partial.json');
 // The interactive solver may use a smaller, user-selected state budget for
 // responsiveness.  This offline library is deliberately more patient: the
 // largest observed depth-3 initial states need over 460k expanded states.
-const MODEL_VERSION = 'first-action-depth3-coverage-v5';
-const COMPATIBLE_COMPLETE_MODELS = new Set(['first-action-depth3-coverage-v4']);
+const MODEL_VERSION = 'first-action-depth3-coverage-v6';
+const COMPATIBLE_COMPLETE_MODELS = new Set(['first-action-depth3-coverage-v4', 'first-action-depth3-coverage-v5']);
 const CANONICAL = { puzzles: 9, hints: 11, challenges: 36, depth: 3, budget: 1000000, pool: 'md' };
 
 function loadRuntime() {
@@ -42,7 +42,9 @@ function fieldDefinitions() {
     { key: 'border', bit: 1, value: (card) => card.b },
     { key: 'attribute', bit: 2, value: (card) => card.a },
     { key: 'race', bit: 4, value: (card) => card.r },
-    { key: 'number', bit: 8, value: (card) => card.nm },
+    // Initial reveals show the actual level/rank/link value (`n`). `nm` is a
+    // challenge-matching bit mask and must never be used as a reveal key.
+    { key: 'number', bit: 8, value: (card) => card.n },
     { key: 'attack', bit: 16, value: (card) => card.atk },
     { key: 'defense', bit: 32, value: (card) => card.def },
   ];
@@ -208,7 +210,7 @@ if (!isMainThread) {
     // depth, action coverage and resource model.  Keep it when only the cap
     // is raised; bounded/error states are deliberately recalculated.
     else if (COMPATIBLE_COMPLETE_MODELS.has(saved.modelVersion)) {
-      checkpoint.states = Object.fromEntries(Object.entries(saved.states || {}).filter(([, result]) => result.status === 'complete'));
+      checkpoint.states = Object.fromEntries(Object.entries(saved.states || {}).filter(([, result]) => result.status === 'complete' && result.field !== 'number'));
     }
   }
   const states = [];

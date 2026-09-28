@@ -1268,8 +1268,9 @@
     const rootActionValues = (entry.topActions || []).map((action) => ({
       action: { type: action.type, index: action.index ?? undefined }, value: action.value,
     }));
-    const canonicalContext = state.puzzle === 1 && state.hints === 11 && state.challenges === 36
-      && state.config.puzzles === 9 && state.config.totalHints === 11 && state.config.totalChallenges === 36;
+    const canonical = reference.canonical || {};
+    const canonicalContext = state.puzzle === 1 && state.hints === canonical.hints && state.challenges === canonical.challenges
+      && state.config.puzzles === canonical.puzzles && state.config.totalHints === canonical.hints && state.config.totalChallenges === canonical.challenges;
     return {
       action: { type: entry.best.type, index: entry.best.index ?? undefined }, value: entry.best.value,
       rootActionValues, expandedStates: entry.expandedStates, depth: reference.canonical?.depth || 3,
@@ -1386,10 +1387,15 @@
     // This is a user preference rather than a hidden override: the reference
     // can be preferred on later puzzles too, or turned off for a fully live
     // resource-aware calculation.
-    const useReferenceDirect = Boolean(referenceDecision && $('#referencePriorityToggle').checked);
+    const referenceEnabled = Boolean(referenceDecision && $('#referencePriorityToggle').checked);
+    // A stored root action was evaluated for the canonical opening state. It
+    // may be used directly only there. Later puzzles and altered inventories
+    // keep the reference cards as search seeds, while the live solver still
+    // compares hint versus challenge with the actual remaining resources.
+    const useReferenceDirect = Boolean(referenceEnabled && referenceDecision.canonicalContext);
     const exactDecision = mode === 'balanced' && !useReferenceDirect ? tryExactBellman(candidates, alreadyGuessed) : null;
     const restrictedDecision = mode === 'balanced' && !useReferenceDirect && !exactDecision
-      ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, referenceDecision?.seedIndexes || []) : null;
+      ? tryRestrictedPolicy(candidates, alreadyGuessed, quick, referenceEnabled ? referenceDecision.seedIndexes : []) : null;
     const policyDecision = useReferenceDirect ? referenceDecision : (exactDecision || restrictedDecision);
     lastProof = policyDecision || (mode === 'balanced' ? boundedCertificate(quick) : null);
     if (policyDecision?.action?.type === 'challenge') {
@@ -1413,9 +1419,7 @@
       const tiedCandidates = [...new Set((policyDecision.optimalActions || []).filter((action) => action.type === 'challenge' && candidateSet.has(action.index)).map((action) => action.index))];
       if (tiedCandidates.length > 1) advice.equivalentChoices = tiedCandidates;
     }
-    if (useReferenceDirect) advice.reason = referenceDecision.canonicalContext
-      ? `已优先采用离线第一猜参考库：提示与挑战在同一棵深度 ${referenceDecision.depth} 的自适应策略树中比较。该初始揭示状态已离线展开 ${referenceDecision.expandedStates.toLocaleString('zh-CN')} 个状态；大候选状态使用已声明的覆盖挑战集合。`
-      : `已优先采用离线第一猜参考库。当前题号或资源库存与其默认规范不同，因此这是可由你关闭的优先推荐；如需按当前资源重新比较提示与挑战，请关闭“优先采用第一猜参考库”。`;
+    if (useReferenceDirect) advice.reason = `已优先采用离线第一猜参考库：提示与挑战在同一棵深度 ${referenceDecision.depth} 的自适应策略树中比较。该初始揭示状态已离线展开 ${referenceDecision.expandedStates.toLocaleString('zh-CN')} 个状态；大候选状态使用已声明的覆盖挑战集合。`;
     else if (referenceDecision) advice.reason = `已命中离线第一猜参考库。由于当前题号或资源库存与参考库规范不同，参考库仅提供高质量挑战候选；提示与挑战的最终取舍仍按当前资源由实时策略树重新计算。`;
     else if (restrictedDecision) advice.reason = `提示与挑战已进入同一棵深度 ${restrictedDecision.depth} 的自适应策略树，并在完全猜中分支计入剩余题目的资源续值。已展开 ${restrictedDecision.expandedStates.toLocaleString('zh-CN')} 个状态；这是跨题近似值，尚未证明全局最优。`;
     if (mode === 'balanced' && !policyDecision && lastProof) {
@@ -2214,7 +2218,7 @@
 
   function combinedSimulationSnapshot(parts, total, config) {
     const results = parts.flatMap((part) => part?.results || []);
-    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','referenceDecisions','hintDecisions','challengeDecisions'];
+    const diagnosticKeys = ['solverCalls','cacheHits','exactCalls','depth3Calls','depth2Calls','fallbackCalls','referenceDecisions','referenceDirectDecisions','referenceSeedDecisions','hintDecisions','challengeDecisions'];
     const diagnostics = Object.fromEntries(diagnosticKeys.map((key) => [key, parts.reduce((sum, part) => sum + Number(part?.diagnostics?.[key] || 0), 0)]));
     const average = (key) => results.length ? results.reduce((sum,item)=>sum+item[key],0)/results.length : 0;
     const solvedValues = results.map((item)=>item.solved).sort((a,b)=>a-b), meanSolved=average('solved');
@@ -2238,6 +2242,7 @@
     $('#simulationProgress strong').textContent=type==='complete'?`已完成 ${completed}/${total}`:type==='cancelled'?`已停止，完成 ${completed}/${total}`:runningText;
     const d=summary.diagnostics,distribution=summary.distribution||[];
     $('#simulationResults').innerHTML=`<div class="simulation-live"><strong>${type==='complete'?'测试完成':type==='cancelled'?'测试已停止':'后台计算中'}</strong><span>已完成 ${summary.count} / ${total} 个活动</span>${current?`<small>正在进行：第 ${current.round} 个活动，第 ${current.puzzle} 题；本轮已用 ${current.hintsUsed} 提示、${current.challengesUsed} 挑战</small>`:''}</div><div class="result-grid"><article><span>实时平均解题数</span><strong>${summary.meanSolved.toFixed(2)} / ${state.config.puzzles}</strong><small>95%区间 ${summary.solvedLow.toFixed(2)}–${summary.solvedHigh.toFixed(2)} · P10 ${summary.p10} · P50 ${summary.p50} · P90 ${summary.p90}</small></article><article><span>实时全题完成率</span><strong>${formatPercent(summary.completion)}</strong><small>Wilson 95%区间 ${formatPercent(summary.completionLow)}–${formatPercent(summary.completionHigh)}</small></article><article><span>平均首次相符项</span><strong>${summary.matchedItems.toFixed(2)}</strong><small>只统计挑战首次猜中的项目</small></article><article><span>平均资源消耗</span><strong>${summary.challengesUsed.toFixed(2)} 挑战</strong><small>${summary.hintsUsed.toFixed(2)} 提示</small></article><article><span>求解层级</span><strong>深度3：${d.depth3Calls}</strong><small>精确 ${d.exactCalls} · 深度2 ${d.depth2Calls} · 降级 ${d.fallbackCalls}</small></article><article><span>运行统计</span><strong>${summary.elapsed.toFixed(1)} 秒</strong><small>${d.solverCalls} 次实时求解 · ${d.referenceDecisions} 次第一猜参考 · ${d.hintDecisions} 次提示</small></article></div><div class="histogram">${distribution.map(item=>`<div><span>解出${item.solved}题</span><i><b style="width:${item.count/Math.max(1,summary.count)*100}%"></b></i><strong>${item.count}</strong></div>`).join('')}</div><p class="simulation-disclaimer">测试在独立后台线程运行，关闭窗口不会中断；重新打开“规模测试”可查看最新进度。每一步使用与实操相同的策略树，结果评估当前策略，但不构成全局最优证明。</p>`;
+    if (d.referenceDecisions) $('#simulationResults .simulation-disclaimer').insertAdjacentHTML('beforebegin', `<p class="simulation-disclaimer">参考库使用明细：直接采用 ${d.referenceDirectDecisions || 0} 次；仅加入实时搜索候选 ${d.referenceSeedDecisions || 0} 次。</p>`);
   }
 
   function renderSimulationWorkers(snapshot) {
@@ -2286,7 +2291,7 @@
         }
       };
       worker.onerror=(event)=>{parts[index]={type:'error',results:parts[index]?.results||[],diagnostics:parts[index]?.diagnostics||{},message:event.message};worker.terminate();};
-      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds,useReference,referenceStates:useReference?window.FIRST_ACTION_REFERENCE?.states:null});
+      worker.postMessage({type:'start',cards:compactCards,config,pool,rounds:workerRounds,useReference,referenceStates:useReference?window.FIRST_ACTION_REFERENCE?.states:null,referenceCanonical:useReference?window.FIRST_ACTION_REFERENCE?.canonical:null});
       return {worker,rounds:workerRounds};
     });
   }
